@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .trades import trade_windows
+
 
 def _to_series(x) -> pd.Series:
     if isinstance(x, pd.Series):
@@ -198,7 +200,8 @@ def trade_returns_from_position(
     Canonical trade definition:
       trade = contiguous segment where position != 0.
 
-    Return per trade is computed by compounding per-bar returns_net:
+    Return per trade is computed by compounding per-bar returns_net over the
+    trade's P&L window (entry bar through the first flat bar; see trades.trade_windows):
       trade_return = prod(1 + r_t) - 1
     """
     if bt is None or len(bt) == 0:
@@ -206,19 +209,12 @@ def trade_returns_from_position(
     if pos_col not in bt.columns or returns_col not in bt.columns:
         return pd.Series(dtype=float)
 
-    pos = bt[pos_col].fillna(0.0).astype(float)
     r = bt[returns_col].fillna(0.0).astype(float)
-
-    in_pos = pos != 0.0
+    trade_id, in_pos, in_window = trade_windows(bt[pos_col])
     if not bool(in_pos.any()):
         return pd.Series(dtype=float)
 
-    prev_in_pos = in_pos.shift(1, fill_value=False)
-    entry = in_pos & (~prev_in_pos)
-    trade_id = entry.cumsum()
-
-    df = pd.DataFrame({"trade_id": trade_id, "in_pos": in_pos, "r": r})
-    df = df[df["in_pos"]].copy()
+    df = pd.DataFrame({"trade_id": trade_id, "r": r})[in_window].copy()
     if df.empty:
         return pd.Series(dtype=float)
 

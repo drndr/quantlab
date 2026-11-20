@@ -9,6 +9,31 @@ if TYPE_CHECKING:
     from quantlab.strategies.base import BacktestConfig
 
 
+def trade_windows(pos: pd.Series) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Split a position series into trades and their P&L windows.
+
+    Returns (trade_id, in_pos, in_window):
+      - trade_id:  increments on each entry (flat -> non-zero)
+      - in_pos:    bars where position != 0 (a trade = a contiguous run of these)
+      - in_window: the trade's P&L window = its in_pos bars PLUS the first flat bar
+                   after it
+
+    Why the extra bar: the engine books the P&L of holding over bar t-1 -> t on
+    bar t. A trade's final price move and its exit costs therefore land on the
+    first bar where position is already 0, and its entry costs on the entry bar.
+    That bar still carries the closing trade's trade_id (ids only change on entry).
+    """
+    in_pos = pos.fillna(0.0).astype(float) != 0.0
+    prev_in_pos = in_pos.shift(1, fill_value=False)
+    # Pandas boolean operators apply bar by bar to whole Series: ~ is NOT, & is AND,
+    # | is OR. Python's `not` / `and` / `or` don't work element-wise here; they raise
+    # "The truth value of a Series is ambiguous".
+    entry = in_pos & ~prev_in_pos
+    exit_bar = ~in_pos & prev_in_pos
+    trade_id = entry.cumsum().astype(int)
+    return trade_id, in_pos, in_pos | exit_bar
+
+
 def extract_executions(
     df: pd.DataFrame,
     prices: pd.Series,
@@ -123,8 +148,11 @@ def extract_trade_log(
     Canonical trade definition:
       trade = contiguous segment where position != 0.
 
-    Trade return definition (Option A):
-      trade_return = prod(1 + returns_net[t]) - 1 over bars while in trade
+    Trade P&L window (see `trade_windows`):
+      entry bar through the first flat bar after it, inclusive.
+
+      trade_return = prod(1 + returns_net[t]) - 1 over the P&L window
+      pnl          = equity at the exit bar - equity just before the entry bar
 
     Returns
     -------
@@ -166,7 +194,10 @@ def extract_trade_log(
     r = bt[returns_col].fillna(0.0).astype(float)
     eq = bt[equity_col].astype(float)
 
-    in_pos = pos != 0.0
+    # Equity before each bar's P&L (a trade entered on the very first bar falls back to that bar).
+    eq_before = eq.shift(1).fillna(eq)
+
+    trade_id, in_pos, in_window = trade_windows(pos)
     prev_in_pos = in_pos.shift(1, fill_value=False)
     entry = in_pos & (~prev_in_pos)
 
@@ -185,17 +216,16 @@ def extract_trade_log(
             ]
         )
 
-    trade_id = entry.cumsum().astype(int)
-
     df = pd.DataFrame({"trade_id": trade_id, "in_pos": in_pos, "r": r, "eq": eq}, index=bt.index)
 
-    # Only keep in-trade bars for return compounding
-    df_in = df[df["in_pos"]].copy()
+    # Bars actually held (for the `bars` column)
+    df_in = df[df["in_pos"]]
 
-    # Compounded return per trade via log1p
-    log_r = (1.0 + df_in["r"]).clip(lower=1e-12)
-    df_in["log1p_r"] = np.log(log_r)
-    trade_log = df_in.groupby("trade_id")["log1p_r"].sum()
+    # Compounded return per trade via log1p, over the full P&L window
+    df_win = df[in_window].copy()
+    log_r = (1.0 + df_win["r"]).clip(lower=1e-12)
+    df_win["log1p_r"] = np.log(log_r)
+    trade_log = df_win.groupby("trade_id")["log1p_r"].sum()
     trade_ret = np.expm1(trade_log).astype(float)
 
     # Entry/exit times
@@ -223,8 +253,8 @@ def extract_trade_log(
         # bars in trade (count in_pos bars)
         bars = int(df_in[df_in["trade_id"] == tid].shape[0])
 
-        # equity at entry/exit
-        entry_eq = float(eq.loc[et])
+        # Equity before entry costs, and after the final move + exit costs
+        entry_eq = float(eq_before.loc[et])
         exit_eq = float(eq.loc[xt])
         pnl = exit_eq - entry_eq
 
@@ -364,12 +394,10 @@ def build_trade_ledger(
 
     # Costs per trade
     if costs_col in bt.columns:
-        in_pos = pos != 0.0
-        prev_in_pos = in_pos.shift(1, fill_value=False)
-        entry = in_pos & (~prev_in_pos)
-        trade_id = entry.cumsum().astype(int)
-        df = pd.DataFrame({"trade_id": trade_id, "in_pos": in_pos, "costs": bt[costs_col].fillna(0.0).astype(float)})
-        costs_total = df[df["in_pos"]].groupby("trade_id")["costs"].sum()
+        trade_id, _, in_window = trade_windows(pos)
+        costs = bt[costs_col].fillna(0.0).astype(float)
+        # Entry costs land on the entry bar, exit costs on the first flat bar.
+        costs_total = costs[in_window].groupby(trade_id[in_window]).sum()
         trades["costs_total"] = trades["trade_id"].map(costs_total).fillna(0.0).astype(float)
     else:
         trades["costs_total"] = 0.0
