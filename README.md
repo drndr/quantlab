@@ -26,9 +26,10 @@ quantlab/
 │   └── gates/               # Composable gate implementations
 ├── time_filter/             # Time-blocking infra (FOMC + econ calendar + month blocks)
 ├── data/
-│   ├── dukascopy.py         # Tick download, 1s builder
-│   ├── resample.py          # 5m/15m mid + OHLC
-│   ├── download.py          # CLI: download + resample
+│   ├── dukascopy.py         # Dukascopy download: ticks (1s/1m) or minute candles (1m)
+│   ├── resampling.py        # 5m/15m mid + OHLC
+│   ├── download.py          # CLI: download + resample (--source candles|ticks)
+│   ├── loaders.py           # OHLC parquet loader used by backtests
 │   └── validate.py          # CLI: check integrity
 ├── configs/
 │   ├── schema.py            # Pydantic validation for canonical config
@@ -47,9 +48,11 @@ quantlab/
 
 ## Quick Start
 
+Run commands from the workspace folder: the parent of this repo, which must be checked out as `quantlab/` (the package name), with `.venv/` next to it.
+
 ### WebUI (human inspection)
 ```bash
-.venv/bin/python quantlab/webui/backtest_ui.py --port 8080
+.venv/bin/python -m quantlab.webui.backtest_ui --port 8080
 ```
 
 ### Report generation (canonical HTML outputs)
@@ -76,20 +79,21 @@ quantlab/
 ## Data Management
 
 ```bash
-# Download recent data
-.venv/bin/python quantlab/data/download.py --symbols XAUUSD XAGUSD EURUSD --days 7
+# Download specific period (1m candles -> 1m + 5m/15m OHLC, what the backtests read)
+.venv/bin/python -m quantlab.data.download --symbols XAUUSD --start 2020-01-01 --end 2020-12-31
 
-# Download specific period
-.venv/bin/python quantlab/data/download.py --symbol XAUUSD --start 2020-01-01 --end 2020-12-31
+# Download recent data from ticks instead (1s + 5m/15m; 24 requests per day vs 2)
+.venv/bin/python -m quantlab.data.download --source ticks --symbols XAUUSD XAGUSD EURUSD --days 7
 
 # Validate integrity
-.venv/bin/python quantlab/data/validate.py
+.venv/bin/python -m quantlab.data.validate
 ```
 
 **Data formats:**
 | Folder | Columns |
 |--------|---------|
 | `dukascopy_1s` | ts, bid, ask, mid, spread |
+| `dukascopy_1m` | ts, open, high, low, close, bid_close, ask_close, spread_close |
 | `dukascopy_5m` | ts, bid, ask, mid, spread |
 | `dukascopy_5m_ohlc` | ts, open, high, low, close |
 | `dukascopy_15m` | ts, bid, ask, mid, spread |
@@ -156,6 +160,10 @@ Gate pipeline config:
 - Gate is ON if it appears in `pipeline:`.
 - Gate order is the list order.
 
+Indicator warm-up:
+- `periods.warmup_days` loads that many extra days before each period, so indicators start warmed up. Trading and metrics still start at the period start (0 = cold start).
+- If the data doesn't reach back that far, the run warns and uses the warm-up that exists.
+
 ### Config validation (Pydantic)
 To avoid silent misconfig (typos / wrong param names), Quantlab validates the canonical config schema (including *fully typed* gate params).
 The WebUI runner and `quantlab.rnd` CLI validate configs on load and will fail fast on unknown keys.
@@ -216,16 +224,21 @@ Golden series regression (best_trend 2024–2025):
 
 ```bash
 # run regression
-.venv/bin/python -m pytest -q tests/regression/test_best_trend_2024_2025_series.py
+.venv/bin/python -m pytest -q quantlab/tests/regression/test_best_trend_2024_2025_series.py
 
 # update golden (ONLY when the change is intentional)
-.venv/bin/python tests/regression/update_golden_best_trend_2024_2025.py
+PYTHONPATH=. .venv/bin/python quantlab/tests/regression/update_golden_best_trend_2024_2025.py
 ```
 
 Notes:
 - Golden artifacts live under `tests/regression/golden/`.
-- We bias toward CLI/WebUI parity; the runner intentionally reuses WebUI loaders.
+- The golden config includes the `corr` gate, so the regression needs XAGUSD and EURUSD data as well as XAUUSD.
+- We bias toward CLI/WebUI parity; the webapp, `quantlab.rnd` and the regression test all run through `pipeline.py`.
 
 ## Requirements
 - Runtime: `quantlab/requirements.txt`
 - Dev/test: `quantlab/requirements-dev.txt`
+
+## Repo history
+- **February 2026:** GPT-5.2 + OpenClaw
+- **November 2026:** Opus 5.5 + Claude Code

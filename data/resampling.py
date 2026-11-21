@@ -191,3 +191,55 @@ def resample_dukascopy_1s_to_ohlc(
         cur += one
 
     return n_written
+
+
+def resample_dukascopy_1m_to_ohlc(
+    *,
+    symbol: str,
+    start: dt.date,
+    end: dt.date,
+    rule: str = "5m",
+    root_in: str | Path = Path("data/dukascopy_1m"),
+    root_out: str | Path = Path("data/dukascopy_5m_ohlc"),
+    overwrite: bool = False,
+) -> int:
+    """Resample daily 1m OHLC parquet (e.g. from minute candles) to daily OHLC bars."""
+    root_in = Path(root_in)
+    root_out = Path(root_out)
+
+    n_written = 0
+    cur = start
+    one = dt.timedelta(days=1)
+
+    while cur <= end:
+        in_path = root_in / symbol / str(cur.year) / f"{cur.isoformat()}.parquet"
+        out_path = root_out / symbol / str(cur.year) / f"{cur.isoformat()}.parquet"
+
+        if not in_path.exists() or (out_path.exists() and not overwrite):
+            cur += one
+            continue
+
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        df = pl.read_parquet(str(in_path)).select(["ts", "open", "high", "low", "close"]).sort("ts")
+
+        # Same bar convention as the 1s resamplers: closed='left', label='right'.
+        bars = (
+            df.group_by_dynamic(index_column="ts", every=rule, closed="left", label="right")
+            .agg(
+                [
+                    pl.col("open").first().alias("open"),
+                    pl.col("high").max().alias("high"),
+                    pl.col("low").min().alias("low"),
+                    pl.col("close").last().alias("close"),
+                ]
+            )
+            .drop_nulls()
+            .sort("ts")
+        )
+
+        bars.write_parquet(str(out_path))
+        n_written += 1
+        cur += one
+
+    return n_written
