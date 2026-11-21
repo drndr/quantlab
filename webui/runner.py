@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 from pathlib import Path
 from typing import Any
@@ -295,46 +296,34 @@ def run_backtest(
         return False, f"Error: {e}\n{traceback.format_exc()}", Path(".")
 
 
+def _buy_and_hold_config(prices: pd.Series, config: BacktestConfig) -> BacktestConfig:
+    """Engine config for the buy-and-hold baseline: ~100% of capital in gold, unlevered.
+
+    - lot_per_size makes position_size=1 worth ~initial_capital at the first close.
+    - leverage=None turns off the margin check. The baseline is a yardstick, not an
+      account. With a 1x check, any uptick before the (lagged) entry bar makes the
+      position worth more than equity, so entry is skipped until price returns to the
+      first close, or never, if it doesn't.
+    """
+    px0 = float(prices.iloc[0]) if len(prices) else 1.0
+    lot_per_size = float(config.initial_capital) / max(1e-12, px0 * float(config.contract_size_per_lot))
+    return dataclasses.replace(config, leverage=None, lot_per_size=lot_per_size)
+
+
 def _run_buy_and_hold(
     periods: list[tuple[str, dt.date, dt.date]],
     config: BacktestConfig,
 ) -> dict[str, pd.DataFrame]:
-    """Run buy and hold strategy.
+    """Run buy and hold strategy (baseline: ~100% notional at entry, unlevered).
 
-    Baseline semantics: buy-and-hold with ~100% notional at entry (unlevered).
-
-    We achieve this by:
-    - setting leverage=1.0 (so required margin ~= notional)
-    - setting lot_per_size per-period so position_size=1 maps to notional ~= initial_capital
+    See `_buy_and_hold_config` for the sizing and why there is no margin check.
     """
     results = {}
 
     for name, start, end in periods:
         data = load_period_data("XAUUSD", start, end)
         prices = data["prices"].astype(float)
-
-        # Per-period sizing to target notional ~= initial_capital at entry.
-        px0 = float(prices.iloc[0]) if len(prices) else 1.0
-        contract = float(config.contract_size_per_lot)
-        cap0 = float(config.initial_capital)
-        lot_per_size = cap0 / max(1e-12, (px0 * contract))
-
-        cfg = BacktestConfig(
-            initial_capital=float(config.initial_capital),
-            leverage=1.0,
-            lot_per_size=float(lot_per_size),
-            contract_size_per_lot=float(config.contract_size_per_lot),
-            lag=int(config.lag),
-            max_size=float(config.max_size),
-            margin_policy=str(config.margin_policy),
-            record_executions=bool(config.record_executions),
-            fee_per_lot=float(config.fee_per_lot),
-            spread_per_lot=float(config.spread_per_lot),
-        )
-
-        strategy = BuyAndHoldStrategy()
-        result = strategy.run_backtest(prices, config=cfg)
-
+        result = BuyAndHoldStrategy().run_backtest(prices, config=_buy_and_hold_config(prices, config))
         results[name] = result.df
 
     return results
