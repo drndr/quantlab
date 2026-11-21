@@ -225,7 +225,7 @@ def load_time_filter_mask(
 
     if kind == "fomc":
         fomc_cfg = tf.get("fomc", {}) or {}
-        days_csv = fomc_cfg.get("days_csv", "quantlab/data/econ_calendar/fomc_decision_days.csv")
+        days_csv = fomc_cfg.get("days_csv", "data/econ_calendar/fomc_decision_days.csv")
         mask = load_fomc_mask(index, start, end, workspace / str(days_csv), fomc_cfg)
 
         if mask is None:
@@ -234,7 +234,7 @@ def load_time_filter_mask(
 
     if kind == "econ_calendar":
         ec = tf.get("econ_calendar", {}) or {}
-        csv_rel = ec.get("csv", "quantlab/data/econ_calendar/usd_important_events.csv")
+        csv_rel = ec.get("csv", "data/econ_calendar/usd_important_events.csv")
         rules = ec.get("rules", {}) or {}
 
         csv_path = str((workspace / str(csv_rel)).resolve())

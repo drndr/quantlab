@@ -5,11 +5,11 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Any
 
-from ..paths import DATA_ROOTS, QUANTLAB, WORKSPACE  # noqa: F401  (re-exported for the webapp)
+from ..paths import DATA_ROOTS, QUANTLAB, REPORTS, WORKSPACE  # noqa: F401  (re-exported for the webapp)
 
 # Paths
-REPORTS_BASELINES = QUANTLAB / "reports" / "baselines"
-REPORTS_TREND = QUANTLAB / "reports" / "trend_based"
+REPORTS_BASELINES = REPORTS / "baselines"
+REPORTS_TREND = REPORTS / "trend_based"
 CONFIG_PATH = QUANTLAB / "configs" / "trend_based" / "current.yaml"
 
 

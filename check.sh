@@ -20,17 +20,18 @@ elif [[ -n "${1-}" ]]; then
   exit 2
 fi
 
+# Run from the repo root (the folder that contains quantlab/), so `import quantlab` works.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-# Prefer the workspace venv (used by docs/TOOLS.md), then repo-local venv.
-PY="$ROOT/../.venv/bin/python"
-if [[ ! -x "$PY" ]]; then
-  PY="$ROOT/.venv/bin/python"
-fi
-if [[ ! -x "$PY" ]]; then
-  PY="python3"
-fi
+# The repo venv (Linux/macOS or Windows layout), else whatever python3 is on PATH.
+PY="python3"
+for candidate in "$ROOT/.venv/bin/python" "$ROOT/.venv/Scripts/python.exe"; do
+  if [[ -x "$candidate" ]]; then
+    PY="$candidate"
+    break
+  fi
+done
 
 banner() {
   echo ""
@@ -43,19 +44,17 @@ banner "Python"
 "$PY" -V
 
 banner "Import smoke test"
-# Repo is used as a source checkout (not necessarily installed as a package).
-# Keep this consistent with README (PYTHONPATH=.)
-PYTHONPATH="$ROOT" "$PY" -c "import quantlab; import quantlab.engine.backtest; import quantlab.strategies.trend_following; print('OK')"
+"$PY" -c "import quantlab, quantlab.engine.backtest, quantlab.strategies.trend_following; print('OK')"
 
 if [[ "$MODE" == "all" || "$MODE" == "unit" ]]; then
   banner "Unit tests (fast)"
   # Skip regression tests here; they are run explicitly below.
-  "$PY" -m pytest -q tests --ignore=tests/regression
+  "$PY" -m pytest tests --ignore=tests/regression
 fi
 
 if [[ "$MODE" == "all" || "$MODE" == "regression" ]]; then
   banner "Regression: golden series (best_trend 2024–2025)"
-  "$PY" -m pytest -q tests/regression/test_best_trend_2024_2025_series.py
+  "$PY" -m pytest tests/regression/test_best_trend_2024_2025_series.py
 fi
 
 banner "DONE"

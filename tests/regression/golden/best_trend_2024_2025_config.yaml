@@ -5,8 +5,8 @@ symbol: XAUUSD
 corr_symbol: XAGUSD
 corr2_symbol: EURUSD
 roots:
-  root_5m_ohlc: quantlab/data/dukascopy_5m_ohlc
-  root_15m_ohlc: quantlab/data/dukascopy_15m_ohlc
+  root_5m_ohlc: data/dukascopy_5m_ohlc
+  root_15m_ohlc: data/dukascopy_15m_ohlc
 periods:
   mode: three_block
   three_block:
@@ -32,7 +32,7 @@ trend:
 time_filter:
   kind: fomc
   fomc:
-    days_csv: quantlab/data/econ_calendar/fomc_decision_days.csv
+    days_csv: data/econ_calendar/fomc_decision_days.csv
     utc_hhmm: '19:00'
     pre_hours: 2.0
     post_hours: 0.5

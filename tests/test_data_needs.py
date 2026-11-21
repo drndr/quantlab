@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 import yaml
 
+from quantlab.paths import QUANTLAB
 from quantlab.pipeline import PreparedPeriod, data_needs, run_config_periods
 
 EMA_SEP = {"gate": "ema_sep", "params": {"ema_fast": 50, "ema_slow": 300, "atr_n": 20, "sep_k": 0.07}}
@@ -33,7 +34,7 @@ def test_time_filter_only_needs_nothing_extra() -> None:
 
 
 def test_canonical_config_does_not_need_xag_or_eur() -> None:
-    cfg_path = Path(__file__).resolve().parents[1] / "configs" / "trend_based" / "current.yaml"
+    cfg_path = QUANTLAB / "configs" / "trend_based" / "current.yaml"
     cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
     assert data_needs(cfg) == {"need_htf": True, "need_corr": False}
 

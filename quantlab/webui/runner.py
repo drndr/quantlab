@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from .config import CONFIG_PATH, WORKSPACE, StrategyInfo, get_strategies
+from .config import CONFIG_PATH, StrategyInfo, get_strategies
 from ..configs.schema import validate_config_dict
 from ..periods import build_periods
 from ..pipeline import load_period_data, run_config_periods
@@ -45,7 +45,7 @@ def run_backtest(
     
     try:
         # Define periods (config-driven)
-        cfg_path = WORKSPACE / "quantlab/configs/trend_based/current.yaml"
+        cfg_path = CONFIG_PATH
         with open(cfg_path) as f:
             cfg = yaml.safe_load(f) or {}
 

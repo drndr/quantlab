@@ -1,20 +1,17 @@
 # python
 __pycache__/
 *.pyc
+*.egg-info/
+build/
 .venv/
 
-# data
-# Track the *code* + small static calendar inputs, ignore bulky datasets.
-data/*
-!data/__init__.py
-!data/*.py
-!data/econ_calendar/
-!data/econ_calendar/**
+# local tool settings
+.claude/
 
-# bulky / generated datasets
-/data/dukascopy_*/
-/data/dukascopy_raw/
-/data/_backfill_2020_state.json
+# data: datasets are not tracked (rebuild them with quantlab-download);
+# only the small econ_calendar inputs are.
+/data/*
+!/data/econ_calendar/
 
 # reports (generated / bulky)
 reports/**/*.html

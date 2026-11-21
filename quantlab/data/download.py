@@ -12,15 +12,15 @@ Two sources (see dukascopy.py):
 Runs incrementally: skips existing files, reuses the raw cache, and keeps going past
 days that fail (they are listed at the end; rerun the same command to retry them).
 
-Usage (from the workspace folder, the parent of `quantlab/`):
+Usage (from the repo root):
     # Backfill a period from candles
-    .venv/bin/python -m quantlab.data.download --symbols XAUUSD --start 2020-01-01 --end 2020-12-31
+    quantlab-download --symbols XAUUSD --start 2020-01-01 --end 2020-12-31
 
     # Last 7 days from ticks
-    .venv/bin/python -m quantlab.data.download --source ticks --symbols XAUUSD XAGUSD EURUSD --days 7
+    quantlab-download --source ticks --symbols XAUUSD XAGUSD EURUSD --days 7
 
 Cron example (download recent data daily at 6am UTC):
-    0 6 * * * cd /path/to/workspace && .venv/bin/python -m quantlab.data.download --symbols XAUUSD --days 3 >> /var/log/quantlab_download.log 2>&1
+    0 6 * * * cd /path/to/repo && .venv/bin/quantlab-download --symbols XAUUSD --days 3 >> /var/log/quantlab_download.log 2>&1
 """
 
 from __future__ import annotations
@@ -37,12 +37,7 @@ from quantlab.data.resampling import (
     resample_dukascopy_1s_to_bars,
     resample_dukascopy_1s_to_ohlc,
 )
-
-# Anchor default paths to the workspace root (like the WebUI does).
-# This avoids accidental writes to e.g. quantlab/quantlab/data when running from
-# inside the quantlab/ folder.
-WORKSPACE = Path(__file__).resolve().parents[2]
-QUANTLAB = WORKSPACE / "quantlab"
+from quantlab.paths import DATA  # default output dirs are anchored to the repo, not the cwd
 
 Errors = list[tuple[str, dt.date, str]]
 
@@ -60,13 +55,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--end", type=dt.date.fromisoformat, default=None,
                     help="End date (YYYY-MM-DD; default: yesterday for candles, today for ticks)")
     ap.add_argument("--days", type=int, default=None, help="Download last N days (alternative to --start/--end)")
-    ap.add_argument("--cache-dir", type=Path, default=QUANTLAB / "data" / "dukascopy_raw", help="Raw .bi5 cache")
-    ap.add_argument("--out-1m", type=Path, default=QUANTLAB / "data" / "dukascopy_1m", help="1m output dir (candles)")
-    ap.add_argument("--out-1s", type=Path, default=QUANTLAB / "data" / "dukascopy_1s", help="1s output dir (ticks)")
-    ap.add_argument("--out-5m", type=Path, default=QUANTLAB / "data" / "dukascopy_5m", help="5m mid output dir (ticks)")
-    ap.add_argument("--out-5m-ohlc", type=Path, default=QUANTLAB / "data" / "dukascopy_5m_ohlc", help="5m OHLC output dir")
-    ap.add_argument("--out-15m", type=Path, default=QUANTLAB / "data" / "dukascopy_15m", help="15m mid output dir (ticks)")
-    ap.add_argument("--out-15m-ohlc", type=Path, default=QUANTLAB / "data" / "dukascopy_15m_ohlc", help="15m OHLC output dir")
+    ap.add_argument("--cache-dir", type=Path, default=DATA / "dukascopy_raw", help="Raw .bi5 cache")
+    ap.add_argument("--out-1m", type=Path, default=DATA / "dukascopy_1m", help="1m output dir (candles)")
+    ap.add_argument("--out-1s", type=Path, default=DATA / "dukascopy_1s", help="1s output dir (ticks)")
+    ap.add_argument("--out-5m", type=Path, default=DATA / "dukascopy_5m", help="5m mid output dir (ticks)")
+    ap.add_argument("--out-5m-ohlc", type=Path, default=DATA / "dukascopy_5m_ohlc", help="5m OHLC output dir")
+    ap.add_argument("--out-15m", type=Path, default=DATA / "dukascopy_15m", help="15m mid output dir (ticks)")
+    ap.add_argument("--out-15m-ohlc", type=Path, default=DATA / "dukascopy_15m_ohlc", help="15m OHLC output dir")
     ap.add_argument("--no-mid", action="store_true", help="Skip mid files, only OHLC (ticks)")
     ap.add_argument("--overwrite", action="store_true", help="Overwrite existing parquet files (the raw cache is always reused)")
     ap.add_argument("--max-days", type=int, default=None, help="Max days per run (for cron safety)")

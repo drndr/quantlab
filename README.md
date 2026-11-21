@@ -13,51 +13,61 @@ It includes a WebUI runner for HTML reports and an agent-friendly `quantlab.rnd`
 ## File Structure
 
 ```
-quantlab/
-├── engine/                  # Backtest engine + metrics + trade extraction
-│   ├── backtest.py          # Core loop (python + optional numba)
-│   ├── metrics.py           # Equity-curve metrics: Sharpe, max-DD, exposure
-│   └── trades.py            # Trade log, ledger, trade stats (trade_summary)
-├── strategies/              # Strategy classes + gates
-│   ├── base.py              # StrategyBase, BacktestResult, BacktestConfig
-│   ├── buy_and_hold.py
-│   ├── mean_reversion.py
-│   ├── trend_following.py   # TrendStrategy, TrendStrategyWithGates
-│   └── gates/               # Composable gate implementations
-├── time_filter/             # Time-blocking infra (FOMC + econ calendar + month blocks)
-├── data/
-│   ├── dukascopy.py         # Dukascopy download: ticks (1s/1m) or minute candles (1m)
-│   ├── resampling.py        # 5m/15m mid + OHLC
-│   ├── download.py          # CLI: download + resample (--source candles|ticks)
-│   ├── loaders.py           # OHLC parquet loader used by backtests
-│   └── validate.py          # CLI: check integrity
-├── configs/
-│   ├── schema.py            # Pydantic validation for canonical config
-│   └── trend_based/
-│       ├── reference/       # Archived reference configs
-│       └── current.yaml     # Canonical config
-├── reporting/               # Report generation (HTML)
-├── reports/                 # Output reports + decision bundles
-├── tests/                   # Unit tests + regression (golden series)
-├── webui/                   # Browser interface
-├── rnd.py                   # Low-token CLI runner (agent-friendly)
-├── pipeline.py              # Shared run pipeline: data -> time filter -> strategy -> engine
-├── periods.py / paths.py    # Period building, workspace + data paths
-└── check.sh                 # Unit + regression checks (one command)
+<repo>/
+├── quantlab/                    # Python package (code + configs)
+│   ├── engine/                  # Backtest engine + metrics + trade extraction
+│   │   ├── backtest.py          # Core loop (python + optional numba)
+│   │   ├── metrics.py           # Equity-curve metrics: Sharpe, max-DD, exposure
+│   │   └── trades.py            # Trade log, ledger, trade stats (trade_summary)
+│   ├── strategies/              # Strategy classes + gates
+│   │   ├── base.py              # StrategyBase, BacktestResult, BacktestConfig
+│   │   ├── buy_and_hold.py
+│   │   ├── mean_reversion.py
+│   │   ├── trend_following.py   # TrendStrategy, TrendStrategyWithGates
+│   │   └── gates/               # Composable gate implementations
+│   ├── time_filter/             # Time-blocking infra (FOMC + econ calendar + month blocks)
+│   ├── data/                    # Data code (the datasets live in <repo>/data/)
+│   │   ├── dukascopy.py         # Dukascopy download: ticks (1s/1m) or minute candles (1m)
+│   │   ├── resampling.py        # 5m/15m mid + OHLC
+│   │   ├── download.py          # CLI: download + resample (--source candles|ticks)
+│   │   ├── loaders.py           # OHLC parquet loader used by backtests
+│   │   └── validate.py          # CLI: check integrity
+│   ├── configs/
+│   │   ├── schema.py            # Pydantic validation for canonical config
+│   │   └── trend_based/
+│   │       ├── reference/       # Archived reference configs
+│   │       └── current.yaml     # Canonical config
+│   ├── reporting/               # Report generation (HTML)
+│   ├── webui/                   # Browser interface
+│   ├── rnd.py                   # Low-token CLI runner (agent-friendly)
+│   ├── pipeline.py              # Shared run pipeline: data -> time filter -> strategy -> engine
+│   └── periods.py / paths.py    # Period building, repo + data paths
+├── data/                        # Datasets (not tracked) + econ_calendar inputs (tracked)
+├── reports/                     # Output reports + decision bundles
+├── tests/                       # Unit tests + regression (golden series)
+├── pyproject.toml               # Dependencies, commands, pytest config
+└── check.sh                     # Unit + regression checks (one command)
 ```
 
 ## Quick Start
 
-Run commands from the workspace folder: the parent of this repo, which must be checked out as `quantlab/` (the package name), with `.venv/` next to it.
+### Setup (once)
+```bash
+python -m venv .venv
+.venv/bin/pip install -e ".[dev]"     # Windows: .venv\Scripts\pip install -e ".[dev]"
+                                      # add ",fast" for the numba-accelerated engine
+```
+
+Then activate the venv (`source .venv/bin/activate`, Windows: `.venv\Scripts\activate`) and run everything from the repo root.
 
 ### WebUI (human inspection)
 ```bash
-.venv/bin/python -m quantlab.webui.backtest_ui --port 8080
+quantlab-ui --port 8080
 ```
 
 ### Report generation (canonical HTML outputs)
 ```bash
-.venv/bin/python -c "from quantlab.webui.runner import run_backtest; run_backtest('best_trend')"
+python -c "from quantlab.webui.runner import run_backtest; run_backtest('best_trend')"
 ```
 
 ### CLI R&D loop (agent-friendly)
@@ -69,30 +79,32 @@ Run commands from the workspace folder: the parent of this repo, which must be c
 # - reference:         quantlab/configs/trend_based/reference/*.yaml
 
 # Single scoring run
-.venv/bin/python -m quantlab.rnd run --config quantlab/configs/trend_based/current.yaml
+quantlab-rnd run --config quantlab/configs/trend_based/current.yaml
 
 # Holdout periods (periods.score_exclude, i.e. 2026) are not run while tuning.
 # Add --with-holdout only for the final check of a frozen candidate.
 
 # (Optional) Sweeps
-# Sweeps are driven by `quantlab.rnd sweep` and dotted-path keys (see `--help`).
-# Decision bundles are written under `quantlab/reports/trend_based/decisions/`.
+# Sweeps are driven by `quantlab-rnd sweep` and dotted-path keys (see `--help`).
+# Decision bundles are written under `reports/trend_based/decisions/`.
 ```
 
 ## Data Management
 
+Datasets live in `data/` at the repo root and are not tracked by git; rebuild them with the downloader.
+
 ```bash
 # Download specific period (1m candles -> 1m + 5m/15m OHLC, what the backtests read)
-.venv/bin/python -m quantlab.data.download --symbols XAUUSD --start 2020-01-01 --end 2020-12-31
+quantlab-download --symbols XAUUSD --start 2020-01-01 --end 2020-12-31
 
 # Download recent data from ticks instead (1s + 5m/15m; 24 requests per day vs 2)
-.venv/bin/python -m quantlab.data.download --source ticks --symbols XAUUSD XAGUSD EURUSD --days 7
+quantlab-download --source ticks --symbols XAUUSD XAGUSD EURUSD --days 7
 
 # Validate integrity
-.venv/bin/python -m quantlab.data.validate
+python -m quantlab.data.validate
 ```
 
-**Data formats:**
+**Data formats** (folders under `data/`):
 | Folder | Columns |
 |--------|---------|
 | `dukascopy_1s` | ts, bid, ask, mid, spread |
@@ -173,7 +185,7 @@ The WebUI runner and `quantlab.rnd` CLI validate configs on load and will fail f
 
 Validate a YAML file directly:
 ```bash
-.venv/bin/python -m quantlab.configs.schema quantlab/configs/trend_based/current.yaml
+python -m quantlab.configs.schema quantlab/configs/trend_based/current.yaml
 ```
 
 ## Reports
@@ -188,7 +200,7 @@ Validate a YAML file directly:
 
 ### Outputs
 ```
-quantlab/reports/
+reports/
 ├── baselines/           # Simple strategy reports (overwritten)
 │   ├── buy_and_hold.html
 │   ├── trend.html
@@ -227,10 +239,10 @@ Golden series regression (best_trend 2024–2025):
 
 ```bash
 # run regression
-.venv/bin/python -m pytest -q quantlab/tests/regression/test_best_trend_2024_2025_series.py
+pytest tests/regression/test_best_trend_2024_2025_series.py
 
 # update golden (ONLY when the change is intentional)
-PYTHONPATH=. .venv/bin/python quantlab/tests/regression/update_golden_best_trend_2024_2025.py
+python tests/regression/update_golden_best_trend_2024_2025.py
 ```
 
 Notes:
@@ -239,8 +251,7 @@ Notes:
 - We bias toward CLI/WebUI parity; the webapp, `quantlab.rnd` and the regression test all run through `pipeline.py`.
 
 ## Requirements
-- Runtime: `quantlab/requirements.txt`
-- Dev/test: `quantlab/requirements-dev.txt`
+Python 3.12+. Dependencies are declared in `pyproject.toml` (extras: `dev` for pytest, `fast` for numba).
 
 ## Repo history
 - **February 2026:** GPT-5.2 + OpenClaw

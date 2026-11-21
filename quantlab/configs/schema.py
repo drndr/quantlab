@@ -15,7 +15,7 @@ Python:
     cfg = validate_config_dict(cfg_dict)
 
 CLI:
-    .venv/bin/python -m quantlab.config.schema quantlab/configs/trend_based/current.yaml
+    python -m quantlab.configs.schema quantlab/configs/trend_based/current.yaml
 
 Notes
 -----
@@ -84,14 +84,14 @@ class Trend(_ForbidExtra):
 
 
 class TimeFilterFOMC(_ForbidExtra):
-    days_csv: str = "quantlab/data/econ_calendar/fomc_decision_days.csv"
+    days_csv: str = "data/econ_calendar/fomc_decision_days.csv"
     utc_hhmm: str = "19:00"
     pre_hours: float = 2.0
     post_hours: float = 0.5
 
 
 class TimeFilterEconCalendar(_ForbidExtra):
-    csv: str = "quantlab/data/econ_calendar/usd_important_events.csv"
+    csv: str = "data/econ_calendar/usd_important_events.csv"
     rules: dict[str, Any] = Field(default_factory=dict)
 
 

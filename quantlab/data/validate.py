@@ -7,7 +7,7 @@ Checks for:
 - File counts per year
 
 Usage:
-    PYTHONPATH=. .venv/bin/python quantlab/scripts/validate_data.py
+    python -m quantlab.data.validate
 """
 
 from __future__ import annotations
@@ -16,6 +16,8 @@ import argparse
 from datetime import date, timedelta
 from pathlib import Path
 from typing import NamedTuple
+
+from quantlab.paths import DATA
 
 
 class DataFolder(NamedTuple):
@@ -221,7 +223,7 @@ def print_summary(results: dict, folder_name: str) -> None:
 def main():
     ap = argparse.ArgumentParser(description="Validate Dukascopy data")
     ap.add_argument("--verbose", "-v", action="store_true", help="Show missing dates")
-    ap.add_argument("--data-root", type=Path, default=Path("quantlab/data"), help="Data root directory")
+    ap.add_argument("--data-root", type=Path, default=DATA, help="Data root directory")
     args = ap.parse_args()
     
     data_root = args.data_root

@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from quantlab.paths import WORKSPACE
+from quantlab.paths import DATA_ROOTS
 from quantlab.pipeline import run_config_periods
 
 
@@ -18,7 +18,7 @@ CFG = Path(__file__).resolve().parent / "golden" / "best_trend_2024_2025_config.
 def _data_available() -> bool:
     # minimal check: 5m OHLC data root exists and is non-empty
     # (we store these as parquet shards)
-    root = WORKSPACE / "quantlab/data/dukascopy_5m_ohlc"
+    root = DATA_ROOTS["5m_ohlc"]
     return root.exists() and any(root.glob("**/*.parquet"))
 
 

@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import yaml
 
+from quantlab.paths import QUANTLAB
 from quantlab.rnd import _tuning_periods
 
 CFG = yaml.safe_load(
-    (Path(__file__).resolve().parents[1] / "configs" / "trend_based" / "current.yaml").read_text(encoding="utf-8")
+    (QUANTLAB / "configs" / "trend_based" / "current.yaml").read_text(encoding="utf-8")
 )
 
 

@@ -17,6 +17,7 @@ from .engine.metrics import sharpe, sharpe_bootstrap
 
 
 # Same run pipeline as the webapp and the regression tests (see quantlab/pipeline.py).
+from .paths import REPORTS
 from .periods import build_periods
 from .pipeline import Period, prepare_periods, run_config_periods
 
@@ -250,7 +251,7 @@ def _score_candidate(
 
 
 def _decision_dir(slug: str) -> Path:
-    root = Path(__file__).resolve().parents[0] / "reports" / "trend_based" / "decisions"
+    root = REPORTS / "trend_based" / "decisions"
     root.mkdir(parents=True, exist_ok=True)
     today = dt.datetime.now().strftime("%Y-%m-%d")
     folder = root / f"{today}_{slug}"

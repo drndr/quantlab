@@ -13,7 +13,7 @@ def test_time_filter_months_blocks_june() -> None:
             "kind": "fomc",
             "fomc": {
                 # point to a non-existent file -> mask=None, months overlay should still work
-                "days_csv": "quantlab/data/econ_calendar/DOES_NOT_EXIST.csv",
+                "days_csv": "data/econ_calendar/DOES_NOT_EXIST.csv",
             },
             "months": {"block": [6]},
         }
