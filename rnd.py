@@ -24,7 +24,7 @@ from .engine.metrics import sharpe, sharpe_bootstrap
 # - If this ever becomes painful (extra deps / circular imports), extract the shared
 #   functions into a neutral module (e.g. quantlab/inputs.py) and have both import it.
 from .webui.periods import build_periods
-from .webui.runner import load_period_data, load_time_filter_mask  # type: ignore
+from .webui.runner import data_needs, load_period_data, load_time_filter_mask  # type: ignore
 from .webui.config import WORKSPACE
 from .strategies.trend_following import TrendStrategyWithGates
 from .strategies.base import BacktestConfig
@@ -257,6 +257,8 @@ def _prepare_best_trend_inputs(cfg: dict[str, Any]) -> list[PreparedPeriod]:
     symbol = cfg.get("symbol", "XAUUSD")
     corr_symbol = cfg.get("corr_symbol", "XAGUSD")
     corr2_symbol = cfg.get("corr2_symbol", "EURUSD")
+    # Load only the inputs the configured gates read (e.g. XAGUSD/EURUSD only for `corr`).
+    needs = data_needs(cfg)
 
     # time_filter mask is loaded per-period via webui.runner.load_time_filter_mask
     # (supports both fomc and econ_calendar kinds).
@@ -267,8 +269,7 @@ def _prepare_best_trend_inputs(cfg: dict[str, Any]) -> list[PreparedPeriod]:
             symbol,
             start,
             end,
-            need_htf=True,
-            need_corr=True,
+            **needs,
             corr_symbol=corr_symbol,
             corr2_symbol=corr2_symbol,
         )
@@ -307,6 +308,15 @@ def _run_best_trend_periods(
 
     if prepared is None:
         prepared = _prepare_best_trend_inputs(cfg)
+
+    # Sweeps reuse inputs loaded for the base config. Fail loudly if this candidate's
+    # gates need data that wasn't loaded (the gates would otherwise silently no-op).
+    needs = data_needs(cfg)
+    for p in prepared:
+        missing = [k for k, need in (("bars_15m", needs["need_htf"]), ("prices_xag", needs["need_corr"]))
+                   if need and p.context.get(k) is None]
+        if missing:
+            raise ValueError(f"{p.name}: config needs {missing}, which were not loaded for this run")
 
     out: dict[str, pd.DataFrame] = {}
     for p in prepared:

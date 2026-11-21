@@ -69,6 +69,17 @@ def load_period_data(
     return data
 
 
+def data_needs(cfg: dict) -> dict[str, bool]:
+    """Which optional inputs the configured gate pipeline reads.
+
+    Derived from the strategy's own data_requirements, so data for gates that are not
+    in the pipeline (e.g. XAGUSD/EURUSD for `corr`) is never loaded or required.
+    Returns keyword arguments for `load_period_data`.
+    """
+    reqs = TrendStrategyWithGates.from_config(cfg).data_requirements
+    return {"need_htf": "bars_15m" in reqs, "need_corr": "prices_xag" in reqs}
+
+
 def load_fomc_mask(
     index: pd.DatetimeIndex,
     start: dt.date,
@@ -381,6 +392,8 @@ def _run_best_trend(
     symbol = cfg.get("symbol", "XAUUSD")
     corr_symbol = cfg.get("corr_symbol", "XAGUSD")
     corr2_symbol = cfg.get("corr2_symbol", "EURUSD")
+    # Load only the inputs the configured gates read (e.g. XAGUSD/EURUSD only for `corr`).
+    needs = data_needs(cfg)
     
     # time_filter is loaded per-period via load_time_filter_mask (supports fomc or econ_calendar)
     
@@ -390,8 +403,7 @@ def _run_best_trend(
         # Load all data
         data = load_period_data(
             symbol, start, end,
-            need_htf=True,
-            need_corr=True,
+            **needs,
             corr_symbol=corr_symbol,
             corr2_symbol=corr2_symbol,
         )
