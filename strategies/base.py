@@ -210,7 +210,7 @@ class StrategyBase:
         )
 
         # Compute metrics (canonical helpers live in quantlab.engine.metrics)
-        from ..engine.metrics import max_drawdown as _max_dd, sharpe as _sharpe, n_trades_from_position
+        from ..engine.metrics import max_drawdown as _max_dd, sharpe as _sharpe
 
         equity = df["equity"].astype(float)
         returns = df["returns_net"].astype(float)
@@ -218,17 +218,16 @@ class StrategyBase:
         final_equity = float(equity.iloc[-1])
         total_return = (final_equity / config.initial_capital - 1.0) * 100
 
-        # Canonical trade count: contiguous position segments
-        trade_count = int(n_trades_from_position(df, pos_col="position"))
-
         # Canonical Sharpe: computed on daily returns derived from equity.
         sharpe = float(_sharpe(equity))
 
         # Max drawdown as percent
         max_drawdown = float(_max_dd(equity)) * 100
 
-        # Trade log (canonical)
-        trades = extract_trade_log(df).to_dict(orient="records")
+        # Trade log (canonical, see engine.trades) and the trade count from it
+        trade_log = extract_trade_log(df)
+        trades = trade_log.to_dict(orient="records")
+        trade_count = int(len(trade_log))
         
         # Extract executions if requested
         executions = None

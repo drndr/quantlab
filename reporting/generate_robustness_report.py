@@ -9,11 +9,8 @@ from ..engine.metrics import (
     sharpe,
     sharpe_bootstrap,
     exposure_from_position,
-    avg_win_loss_from_position,
-    profit_factor_from_position,
-    win_rate_from_position,
-    n_trades_from_position,
 )
+from ..engine.trades import build_trade_ledger, trade_summary
 
 from .report_common import PeriodRow, safe_float, fmt_ts
 
@@ -27,8 +24,6 @@ def report_robustness(
     returns_col: str = "returns_net",
     equity_col: str = "equity",
     baseline_periods: dict[str, pd.DataFrame] | None = None,
-    n_trades: dict[str, int] | None = None,
-    win_rate: dict[str, float] | None = None,
     score_exclude: list[str] | set[str] | None = None,
     table_title: str = "Yearly breakdown",
 ) -> Path:
@@ -69,11 +64,10 @@ def report_robustness(
                     sharpe_ci_hi=float("nan"),
                     vs_bh=float("nan"),
                     win_rate=float("nan"),
-                    profit_factor=float("nan"),
                     avg_win=float("nan"),
                     avg_loss=float("nan"),
                     exposure=float("nan"),
-                    n_trades=int((n_trades or {}).get(name, 0)),
+                    n_trades=0,
                     start="",
                     end="",
                 )
@@ -147,14 +141,11 @@ def report_robustness(
         s_lo = float(s_ci.get("lo", float("nan")))
         s_hi = float(s_ci.get("hi", float("nan")))
 
-        if n_trades is None:
-            trades = n_trades_from_position(bt, pos_col="position")
-        else:
-            trades = int(n_trades.get(name, 0))
-
-        wr = float(win_rate.get(name)) if (win_rate is not None and name in win_rate) else win_rate_from_position(bt)
-        pf = profit_factor_from_position(bt, pos_col="position", returns_col=returns_col)
-        avg_win, avg_loss = avg_win_loss_from_position(bt, pos_col="position", returns_col=returns_col)
+        # Trade stats: one definition, shared with the trades report (engine.trades.trade_summary).
+        ts = trade_summary(build_trade_ledger(bt, returns_col=returns_col, equity_col=equity_col))
+        trades = ts["n_trades"]
+        wr = ts["win_rate"] * 100.0
+        avg_win, avg_loss = ts["avg_win"] * 100.0, ts["avg_loss"] * 100.0
 
         exposure = float(exposure_from_position(bt, pos_col="position"))
 
@@ -168,7 +159,6 @@ def report_robustness(
                 sharpe_ci_hi=s_hi,
                 vs_bh=vs_bh,
                 win_rate=wr,
-                profit_factor=pf,
                 avg_win=avg_win,
                 avg_loss=avg_loss,
                 exposure=exposure,
@@ -194,14 +184,6 @@ def report_robustness(
         x = safe_float(x)
         if np.isnan(x):
             return "nan"
-        return f"{x:,.2f}"
-
-    def pf_fmt(x: float) -> str:
-        x = safe_float(x)
-        if np.isnan(x):
-            return "nan"
-        if np.isinf(x):
-            return "inf"
         return f"{x:,.2f}"
 
     def money(x: float) -> str:
@@ -265,7 +247,6 @@ def report_robustness(
             f"<td class='num mono'>{num(r.sharpe)}</td>"
             f"<td class='num mono'>{num(r.sharpe_ci_lo)}/{num(r.sharpe_ci_hi)}</td>"
             f"<td class='num mono'>{pct(r.win_rate)}</td>"
-            f"<td class='num mono'>{pf_fmt(r.profit_factor)}</td>"
             f"<td class='num mono'>{pct(r.avg_win)}</td>"
             f"<td class='num mono'>{pct(r.avg_loss)}</td>"
             f"<td class='num mono'>{pct(r.exposure)}</td>"
@@ -386,7 +367,6 @@ def report_robustness(
                 <th class='num' data-sort='num'>Sharpe</th>
                 <th class='num' data-sort='text'>Sharpe CI</th>
                 <th class='num' data-sort='num'>Win Rate</th>
-                <th class='num' data-sort='num'>Profit Factor</th>
                 <th class='num' data-sort='num'>Avg Win</th>
                 <th class='num' data-sort='num'>Avg Loss</th>
                 <th class='num' data-sort='num'>Exposure%</th>

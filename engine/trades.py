@@ -293,7 +293,11 @@ def duration_bin(bars: pd.Series) -> pd.Categorical:
 
 
 def profit_factor(pnl: pd.Series) -> float:
-    """Profit factor = sum(wins) / sum(|losses|) on *trade* PnL."""
+    """Profit factor = sum(wins) / sum(|losses|) on per-trade *dollar* P&L.
+
+    Dollars, not % returns: with fixed lot sizes the same $ win is a bigger %
+    when the account is small, so a %-based profit factor overstates.
+    """
     pnl = pnl.astype(float)
     wins = float(pnl[pnl > 0].sum())
     losses = float((-pnl[pnl < 0]).sum())
@@ -302,44 +306,65 @@ def profit_factor(pnl: pd.Series) -> float:
     return wins / losses
 
 
-def agg_trade_table(trades: pd.DataFrame, key: str) -> pd.DataFrame:
-    """Aggregate per-trade ledger into a bucket table.
+_SUMMARY_KEYS = (
+    "n_trades", "win_rate", "avg_return", "median_return", "avg_win", "avg_loss",
+    "sum_pnl", "avg_pnl", "avg_bars", "profit_factor",
+)
 
-    Expects columns:
-      - win (bool)
-      - trade_return (float)
-      - pnl_net (float)
-      - bars (int)
-      - costs_total (float) (optional)
 
-    Returns a stable superset of metrics. Callers can subset columns.
+def trade_summary(trades: pd.DataFrame) -> dict[str, float]:
+    """Trade statistics from a ledger (one row per trade, see `build_trade_ledger`).
+
+    This is the single definition of every trade-level stat the reports show.
+    Rates and returns are fractions (0.35 = 35%); P&L and costs are dollars.
+
+      n_trades              number of trades
+      win_rate              share of trades with pnl_net > 0
+      avg_return            mean trade_return (median_return likewise)
+      avg_win / avg_loss    mean trade_return of winning / losing trades
+      sum_pnl / avg_pnl     total / mean pnl_net
+      avg_bars              mean bars held
+      profit_factor         see `profit_factor` (dollars)
+      sum_costs / avg_costs total / mean costs_total (only if the ledger has costs)
     """
-    g = trades.groupby(key, dropna=False)
+    nan = float("nan")
+    has_costs = trades is not None and "costs_total" in trades.columns
+    if trades is None or len(trades) == 0:
+        out = dict.fromkeys(_SUMMARY_KEYS, nan) | {"n_trades": 0, "sum_pnl": 0.0}
+        if has_costs:
+            out |= {"sum_costs": 0.0, "avg_costs": nan}
+        return out
 
-    out = pd.DataFrame(
-        {
-            "n_trades": g.size(),
-            "win_rate": g["win"].mean(),
-            "avg_return": g["trade_return"].mean(),
-            "median_return": g["trade_return"].median(),
-            "sum_pnl": g["pnl_net"].sum(),
-            "avg_pnl": g["pnl_net"].mean(),
-            "avg_bars": g["bars"].mean(),
-        }
-    )
+    pnl = trades["pnl_net"].astype(float)
+    ret = trades["trade_return"].astype(float)
+    win, loss = pnl > 0, pnl < 0
+    out = {
+        "n_trades": int(len(trades)),
+        "win_rate": float(win.mean()),
+        "avg_return": float(ret.mean()),
+        "median_return": float(ret.median()),
+        "avg_win": float(ret[win].mean()) if win.any() else nan,
+        "avg_loss": float(ret[loss].mean()) if loss.any() else nan,
+        "sum_pnl": float(pnl.sum()),
+        "avg_pnl": float(pnl.mean()),
+        "avg_bars": float(trades["bars"].mean()),
+        "profit_factor": profit_factor(pnl),
+    }
+    if has_costs:
+        out["sum_costs"] = float(trades["costs_total"].sum())
+        out["avg_costs"] = float(trades["costs_total"].mean())
+    return out
 
-    if "costs_total" in trades.columns:
-        out["sum_costs"] = g["costs_total"].sum()
-        out["avg_costs"] = g["costs_total"].mean()
 
-    # Profit factor per bucket
-    pf = []
-    for val, sub in trades.groupby(key, dropna=False):
-        pf.append((val, profit_factor(sub["pnl_net"])))
-    pf_df = pd.DataFrame(pf, columns=[key, "profit_factor"])
-    out = out.reset_index().merge(pf_df, on=key, how="left")
+def agg_trade_table(trades: pd.DataFrame, key: str) -> pd.DataFrame:
+    """Per-bucket trade stats: `trade_summary` applied to each group of `key`.
 
-    return out.sort_values("sum_pnl", ascending=False)
+    One row per bucket, sorted by sum_pnl (descending). Callers can subset columns.
+    """
+    rows = [{key: val, **trade_summary(sub)} for val, sub in trades.groupby(key, dropna=False, observed=True)]
+    if not rows:
+        return pd.DataFrame(columns=[key, *_SUMMARY_KEYS])
+    return pd.DataFrame(rows).sort_values("sum_pnl", ascending=False)
 
 
 def build_trade_ledger(

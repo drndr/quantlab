@@ -261,7 +261,7 @@ def run_backtest(
             trades_path = get_report_path(strategy_id, variant=None, kind="trades")
             if trades_path is not None:
                 try:
-                    periods_df = {name: df for name, (df, _, _) in results.items()}
+                    periods_df = results
                     # Trade breakdown report should keep a clean title (avoid dumping the
                     # hyperparam-enriched string into the page title/header).
                     base_title = (final_title.split(" + ", 1)[0].strip() if final_title else info.name)
@@ -287,7 +287,7 @@ def run_backtest(
 def _run_buy_and_hold(
     periods: list[tuple[str, dt.date, dt.date]],
     config: BacktestConfig,
-) -> dict[str, tuple[pd.DataFrame, float, int]]:
+) -> dict[str, pd.DataFrame]:
     """Run buy and hold strategy.
 
     Baseline semantics: buy-and-hold with ~100% notional at entry (unlevered).
@@ -324,8 +324,7 @@ def _run_buy_and_hold(
         strategy = BuyAndHoldStrategy()
         result = strategy.run_backtest(prices, config=cfg)
 
-        executions = int((result.df["position"].diff().abs() > 0).sum())
-        results[name] = (result.df, result.final_equity - float(cfg.initial_capital), executions)
+        results[name] = result.df
 
     return results
 
@@ -335,7 +334,7 @@ def _run_trend_baseline(
     config: BacktestConfig,
     fast: int = 20,
     slow: int = 100,
-) -> dict[str, tuple[pd.DataFrame, float, int]]:
+) -> dict[str, pd.DataFrame]:
     """Run simple trend strategy (no filters)."""
     results = {}
     
@@ -344,8 +343,7 @@ def _run_trend_baseline(
         strategy = TrendStrategy(fast=fast, slow=slow)
         result = strategy.run_backtest(data["prices"], config=config)
         
-        executions = int((result.df["position"].diff().abs() > 0).sum())
-        results[name] = (result.df, result.final_equity - 1000.0, executions)
+        results[name] = result.df
     
     return results
 
@@ -353,7 +351,7 @@ def _run_trend_baseline(
 def _run_mean_reversion(
     periods: list[tuple[str, dt.date, dt.date]],
     config: BacktestConfig,
-) -> dict[str, tuple[pd.DataFrame, float, int]]:
+) -> dict[str, pd.DataFrame]:
     """Run mean reversion strategy."""
     results = {}
     
@@ -362,8 +360,7 @@ def _run_mean_reversion(
         strategy = MeanReversionStrategy(lookback=50, entry_z=1.0, exit_z=0.0)
         result = strategy.run_backtest(data["prices"], config=config)
         
-        executions = int((result.df["position"].diff().abs() > 0).sum())
-        results[name] = (result.df, result.final_equity - 1000.0, executions)
+        results[name] = result.df
     
     return results
 
@@ -372,7 +369,7 @@ def _run_best_trend(
     periods: list[tuple[str, dt.date, dt.date]],
     config: BacktestConfig,
     config_path: Path | None,
-) -> dict[str, tuple[pd.DataFrame, float, int]]:
+) -> dict[str, pd.DataFrame]:
     """Run best_trend strategy using composable gates."""
     # Load config
     if config_path is None:
@@ -421,34 +418,26 @@ def _run_best_trend(
         # Run backtest
         result = strategy.run_backtest(data["prices"], context=context, config=config)
         
-        executions = int((result.df["position"].diff().abs() > 0).sum())
-        results[name] = (result.df, result.final_equity - 1000.0, executions)
+        results[name] = result.df
     
     return results
 
 
 def _generate_report(
-    results: dict[str, tuple[pd.DataFrame, float, int]],
+    results: dict[str, pd.DataFrame],
     info: StrategyInfo,
     report_path: Path,
     *,
     cfg: dict | None = None,
-    baseline_results: dict[str, tuple[pd.DataFrame, float, int]] | None = None,
+    baseline_results: dict[str, pd.DataFrame] | None = None,
     variant: str | None = None,
 ) -> str:
     """Generate HTML report.
 
     Returns the final title string used in the report.
     """
-    periods = {name: df for name, (df, _, _) in results.items()}
-    
-    n_trades = {}
-    for name, (_, pnl, executions) in results.items():
-        if info.strategy_type == "buy_and_hold":
-            n_trades[name] = 1
-        else:
-            n_trades[name] = executions // 2
-    
+    periods = results
+
     initial_capital = {name: 1000.0 for name in periods}
     
     title = info.name
@@ -456,7 +445,7 @@ def _generate_report(
     # (removed) legacy title enrichment: configs are pipeline-based; keep titles stable.
     score_exclude = list(((cfg.get("periods", {}) or {}).get("score_exclude") or []) or []) if isinstance(cfg, dict) else []
 
-    baseline_periods = {name: df for name, (df, _, _) in (baseline_results or {}).items()} if baseline_results else None
+    baseline_periods = baseline_results or None
 
     report_fn = report_robustness if (variant == "robustness") else report_periods_equity_only
 
@@ -466,7 +455,6 @@ def _generate_report(
         out_path=report_path,
         title=title,
         initial_capital=initial_capital,
-        n_trades=n_trades,
         score_exclude=score_exclude,
     )
 

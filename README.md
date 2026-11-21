@@ -16,8 +16,8 @@ It includes a WebUI runner for HTML reports and an agent-friendly `quantlab.rnd`
 quantlab/
 ├── engine/                  # Backtest engine + metrics + trade extraction
 │   ├── backtest.py          # Core loop (python + optional numba)
-│   ├── metrics.py           # Sharpe, max-DD, trade metrics
-│   └── trades.py            # Trade log + execution extraction
+│   ├── metrics.py           # Equity-curve metrics: Sharpe, max-DD, exposure
+│   └── trades.py            # Trade log, ledger, trade stats (trade_summary)
 ├── strategies/              # Strategy classes + gates
 │   ├── base.py              # StrategyBase, BacktestResult, BacktestConfig
 │   ├── buy_and_hold.py

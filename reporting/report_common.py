@@ -22,7 +22,6 @@ class PeriodRow:
     sharpe_ci_lo: float
     sharpe_ci_hi: float
     win_rate: float
-    profit_factor: float
     avg_win: float
     avg_loss: float
     exposure: float

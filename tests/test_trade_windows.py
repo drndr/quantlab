@@ -6,11 +6,12 @@ price move and its exit costs land on the first bar where position is already 0.
 
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 
 from quantlab.engine.backtest import backtest_positions_account_margin
-from quantlab.engine.metrics import trade_returns_from_position, win_rate_from_position
-from quantlab.engine.trades import build_trade_ledger, extract_trade_log
+from quantlab.engine.trades import build_trade_ledger, extract_trade_log, trade_summary
 
 
 def _bt_losing_trade() -> pd.DataFrame:
@@ -47,8 +48,9 @@ def test_ledger_costs_include_both_sides() -> None:
     assert not bool(tl.loc[0, "win"])
 
 
-def test_metrics_trade_returns_use_full_window() -> None:
-    bt = _bt_losing_trade()
-    tr = trade_returns_from_position(bt)
-    assert len(tr) == 1 and tr.iloc[0] < 0
-    assert win_rate_from_position(bt) == 0.0  # was 100.0
+def test_trade_summary_uses_full_window() -> None:
+    s = trade_summary(build_trade_ledger(_bt_losing_trade()))
+    assert s["n_trades"] == 1
+    assert s["win_rate"] == 0.0  # was 1.0 before the window fix
+    assert s["avg_loss"] < 0
+    assert math.isnan(s["avg_win"])  # no winning trades

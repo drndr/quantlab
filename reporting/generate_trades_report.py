@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from ..engine.trades import build_trade_ledger, duration_bin, agg_trade_table, profit_factor
+from ..engine.trades import build_trade_ledger, duration_bin, agg_trade_table, trade_summary
 
 
 def _fig_to_data_uri(fig) -> str:
@@ -37,16 +37,11 @@ def _duration_bin(bars: pd.Series) -> pd.Categorical:
     return duration_bin(bars)
 
 
-def _profit_factor(pnl: pd.Series) -> float:
-    # Backward-compatible alias.
-    return profit_factor(pnl)
-
-
 def _agg(trades: pd.DataFrame, key: str) -> pd.DataFrame:
     # Backward-compatible alias.
     out = agg_trade_table(trades, key)
     # Match this report's expected column subset/order.
-    keep = [key, "n_trades", "win_rate", "avg_return", "sum_pnl", "avg_bars", "profit_factor"]
+    keep = [key, "n_trades", "win_rate", "avg_return", "sum_pnl", "avg_bars"]
     return out[keep]
 
 
@@ -140,12 +135,8 @@ def report_periods_trades_html(
     hist_uri = _fig_to_data_uri(fig)
 
     # TOTAL stats (scored only)
-    n_trades = int(len(scored_trades))
-    win_rate = float(scored_trades["win"].mean())
-    sum_pnl = float(scored_trades["pnl_net"].sum())
-    # sum_costs removed from report (keep costs available in per-trade ledger)
-    pf_total = _profit_factor(scored_trades["pnl_net"])
-    avg_bars = float(scored_trades["bars"].mean())
+    ts = trade_summary(scored_trades)
+    n_trades, win_rate, sum_pnl, avg_bars = ts["n_trades"], ts["win_rate"], ts["sum_pnl"], ts["avg_bars"]
 
     holdout_note = ""
     if exclude:
@@ -322,7 +313,6 @@ def report_periods_trades_html(
       <div class='summary-strip'>
         <div class='pill'># Trades: <b>{n_trades:,}</b></div>
         <div class='pill'>Win rate: <b>{win_rate*100:,.2f}%</b></div>
-        <div class='pill'>Profit factor: <b>{_num(pf_total)}</b></div>
         <div class='pill'>Sum PnL (net): <b>{_money(sum_pnl)}</b></div>
         <!-- Sum costs removed -->
         <div class='pill'>Avg bars/trade: <b>{avg_bars:,.2f}</b></div>
@@ -336,16 +326,16 @@ def report_periods_trades_html(
       </div>
       <div class='card'><div class='box'>
         <h2>Breakdown: by period</h2>
-        {_df_to_html(by_period, pct_cols=pct_cols, num_cols={"profit_factor"})}
+        {_df_to_html(by_period, pct_cols=pct_cols)}
       </div></div>
     </div>
 
     <div class='section grid2'>
       <div class='card'><div class='box'><h2>Breakdown: by holding duration (bars)</h2>
-        {_df_to_html(by_duration, pct_cols=pct_cols, num_cols={"profit_factor"})}
+        {_df_to_html(by_duration, pct_cols=pct_cols)}
       </div></div>
       <div class='card'><div class='box'><h2>Breakdown: by calendar month (aggregated)</h2>
-        {_df_to_html(by_month, pct_cols=pct_cols, num_cols={"profit_factor"})}
+        {_df_to_html(by_month, pct_cols=pct_cols)}
       </div></div>
     </div>
 
