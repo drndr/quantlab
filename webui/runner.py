@@ -5,182 +5,22 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 import yaml
 
-from .config import WORKSPACE, QUANTLAB, DATA_ROOTS, StrategyInfo, get_strategies
+from .config import CONFIG_PATH, WORKSPACE, StrategyInfo, get_strategies
+from ..configs.schema import validate_config_dict
+from ..periods import build_periods
+from ..pipeline import load_period_data, run_config_periods
 from ..strategies import (
     BuyAndHoldStrategy,
     MeanReversionStrategy,
     TrendStrategy,
-    TrendStrategyWithGates,
     BacktestConfig,
-)
-from ..data.loaders import load_dukascopy_ohlc
-from ..time_filter import (
-    EventWindow,
-    build_allow_mask_from_events,
-    build_allow_mask_from_econ_calendar,
-    build_allow_mask_from_months,
 )
 from .. import report_periods_equity_only, report_robustness
 from ..reporting.generate_trades_report import report_periods_trades_html
-from .periods import build_periods
-
-
-def load_period_data(
-    symbol: str,
-    start: dt.date,
-    end: dt.date,
-    *,
-    need_htf: bool = False,
-    need_corr: bool = False,
-    corr_symbol: str = "XAGUSD",
-    corr2_symbol: str = "EURUSD",
-) -> dict[str, Any]:
-    """Load all data needed for a period.
-    
-    Returns:
-        dict with keys: prices, bars_5m, bars_15m (optional), prices_xag, prices_eur
-    """
-    root_5m = DATA_ROOTS["5m_ohlc"]
-    root_15m = DATA_ROOTS["15m_ohlc"]
-    
-    bars_5m = load_dukascopy_ohlc(symbol=symbol, start=start, end=end, root=root_5m)
-    prices = bars_5m["close"].astype(float)
-    
-    data = {
-        "prices": prices,
-        "bars_5m": bars_5m,
-    }
-    
-    if need_htf:
-        bars_15m = load_dukascopy_ohlc(symbol=symbol, start=start, end=end, root=root_15m)
-        data["bars_15m"] = bars_15m
-    
-    if need_corr:
-        xag = load_dukascopy_ohlc(symbol=corr_symbol, start=start, end=end, root=root_5m)
-        data["prices_xag"] = xag["close"].astype(float)
-        
-        eur = load_dukascopy_ohlc(symbol=corr2_symbol, start=start, end=end, root=root_5m)
-        data["prices_eur"] = eur["close"].astype(float)
-    
-    return data
-
-
-def data_needs(cfg: dict) -> dict[str, bool]:
-    """Which optional inputs the configured gate pipeline reads.
-
-    Derived from the strategy's own data_requirements, so data for gates that are not
-    in the pipeline (e.g. XAGUSD/EURUSD for `corr`) is never loaded or required.
-    Returns keyword arguments for `load_period_data`.
-    """
-    reqs = TrendStrategyWithGates.from_config(cfg).data_requirements
-    return {"need_htf": "bars_15m" in reqs, "need_corr": "prices_xag" in reqs}
-
-
-def load_fomc_mask(
-    index: pd.DatetimeIndex,
-    start: dt.date,
-    end: dt.date,
-    fomc_days_path: Path,
-    fomc_cfg: dict | None = None,
-) -> pd.Series | None:
-    """Build FOMC allow mask for the period."""
-    if not fomc_days_path.exists():
-        return None
-
-    fomc_cfg = fomc_cfg or {}
-    utc_hhmm = fomc_cfg.get("utc_hhmm", "19:00")
-    pre_hours = fomc_cfg.get("pre_hours", 2.0)
-    post_hours = fomc_cfg.get("post_hours", 0.5)
-
-    df = pd.read_csv(fomc_days_path)
-    if "date" not in df.columns:
-        return None
-
-    days = [dt.date.fromisoformat(str(x)) for x in df["date"].tolist()]
-    days = [d for d in days if start <= d <= end]
-
-    if not days:
-        return None
-
-    hh, mm = (int(x) for x in utc_hhmm.split(":"))
-    events = [
-        EventWindow(
-            ts=pd.Timestamp(dt.datetime(d.year, d.month, d.day, hh, mm, tzinfo=dt.UTC)),
-            pre=dt.timedelta(hours=pre_hours),
-            post=dt.timedelta(hours=post_hours),
-        )
-        for d in days
-    ]
-
-    return build_allow_mask_from_events(index, events=events)
-
-
-def load_time_filter_mask(
-    index: pd.DatetimeIndex,
-    start: dt.date,
-    end: dt.date,
-    *,
-    cfg: dict,
-    workspace: Path,
-) -> pd.Series | None:
-    """Load allow mask for the configured time_filter kind.
-
-    Supported kinds:
-    - fomc
-    - econ_calendar
-    - months (months-only force-flat; no event windows)
-    """
-    tf = cfg.get("time_filter", {}) or {}
-    kind = (tf.get("kind") or "fomc").strip().lower()
-
-    # Optional month blocking overlay (force-flat semantics).
-    months_cfg = tf.get("months", {}) or {}
-    block_months = months_cfg.get("block") or []
-    m_mask = build_allow_mask_from_months(index, block=block_months)
-
-    if kind == "months":
-        return pd.Series(m_mask, index=index).astype(bool)
-
-    if kind == "fomc":
-        fomc_cfg = tf.get("fomc", {}) or {}
-        days_csv = fomc_cfg.get("days_csv", "quantlab/data/econ_calendar/fomc_decision_days.csv")
-        mask = load_fomc_mask(index, start, end, workspace / str(days_csv), fomc_cfg)
-
-        if mask is None:
-            return m_mask
-        return (pd.Series(mask, index=index).astype(bool) & pd.Series(m_mask, index=index).astype(bool)).astype(bool)
-
-    if kind == "econ_calendar":
-        ec = tf.get("econ_calendar", {}) or {}
-        csv_rel = ec.get("csv", "quantlab/data/econ_calendar/usd_important_events.csv")
-        rules = ec.get("rules", {}) or {}
-
-        csv_path = str((workspace / str(csv_rel)).resolve())
-
-        mask = build_allow_mask_from_econ_calendar(
-            index,
-            start=start,
-            end=end,
-            csv_path=csv_path,
-            rules=rules,
-        )
-
-        # Optional month blocking overlay.
-        months_cfg = tf.get("months", {}) or {}
-        block_months = months_cfg.get("block") or []
-        m_mask = build_allow_mask_from_months(index, block=block_months)
-
-        if mask is None:
-            return m_mask
-        return (pd.Series(mask, index=index).astype(bool) & pd.Series(m_mask, index=index).astype(bool)).astype(bool)
-
-    # Unknown kind -> no mask
-    return None
 
 
 def run_backtest(
@@ -210,8 +50,6 @@ def run_backtest(
             cfg = yaml.safe_load(f) or {}
 
         # Fail fast on typos / unknown keys.
-        from ..configs.schema import validate_config_dict
-
         cfg = validate_config_dict(cfg)
 
         # Variant controls the report surface.
@@ -370,58 +208,9 @@ def _run_best_trend(
     config: BacktestConfig,
     config_path: Path | None,
 ) -> dict[str, pd.DataFrame]:
-    """Run best_trend strategy using composable gates."""
-    # Load config
-    if config_path is None:
-        config_path = WORKSPACE / "quantlab/configs/trend_based/current.yaml"
-    
-    with open(config_path) as f:
-        cfg = yaml.safe_load(f)
-    
-    symbol = cfg.get("symbol", "XAUUSD")
-    corr_symbol = cfg.get("corr_symbol", "XAGUSD")
-    corr2_symbol = cfg.get("corr2_symbol", "EURUSD")
-    # Load only the inputs the configured gates read (e.g. XAGUSD/EURUSD only for `corr`).
-    needs = data_needs(cfg)
-    
-    # time_filter is loaded per-period via load_time_filter_mask (supports fomc or econ_calendar)
-    
-    results = {}
-    
-    for name, start, end in periods:
-        # Load all data
-        data = load_period_data(
-            symbol, start, end,
-            **needs,
-            corr_symbol=corr_symbol,
-            corr2_symbol=corr2_symbol,
-        )
-        
-        # Build allow mask (time_filter)
-        allow_mask = load_time_filter_mask(
-            data["prices"].index,
-            start,
-            end,
-            cfg=cfg,
-            workspace=WORKSPACE,
-        )
-        
-        # Build strategy from config
-        strategy = TrendStrategyWithGates.from_config(cfg, allow_mask=allow_mask)
-        
-        # Build context
-        context = {
-            "bars_15m": data.get("bars_15m"),
-            "prices_xag": data.get("prices_xag"),
-            "prices_eur": data.get("prices_eur"),
-        }
-        
-        # Run backtest
-        result = strategy.run_backtest(data["prices"], context=context, config=config)
-        
-        results[name] = result.df
-    
-    return results
+    """Run the best_trend config over `periods` (shared pipeline: quantlab/pipeline.py)."""
+    cfg = validate_config_dict(yaml.safe_load(Path(config_path or CONFIG_PATH).read_text(encoding="utf-8")) or {})
+    return run_config_periods(cfg, periods, bt_config=config)
 
 
 def _generate_report(

@@ -5,18 +5,12 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Any
 
+from ..paths import DATA_ROOTS, QUANTLAB, WORKSPACE  # noqa: F401  (re-exported for the webapp)
+
 # Paths
-WORKSPACE = Path(__file__).resolve().parents[2]  # workspace root
-QUANTLAB = WORKSPACE / "quantlab"
 REPORTS_BASELINES = QUANTLAB / "reports" / "baselines"
 REPORTS_TREND = QUANTLAB / "reports" / "trend_based"
 CONFIG_PATH = QUANTLAB / "configs" / "trend_based" / "current.yaml"
-
-DATA_ROOTS = {
-    "5m_ohlc": QUANTLAB / "data" / "dukascopy_5m_ohlc",
-    "15m_ohlc": QUANTLAB / "data" / "dukascopy_15m_ohlc",
-    "5m": QUANTLAB / "data" / "dukascopy_5m",
-}
 
 
 @dataclass

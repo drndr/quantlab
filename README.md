@@ -40,6 +40,8 @@ quantlab/
 ├── tests/                   # Unit tests + regression (golden series)
 ├── webui/                   # Browser interface
 ├── rnd.py                   # Low-token CLI runner (agent-friendly)
+├── pipeline.py              # Shared run pipeline: data -> time filter -> strategy -> engine
+├── periods.py / paths.py    # Period building, workspace + data paths
 └── check.sh                 # Unit + regression checks (one command)
 ```
 

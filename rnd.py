@@ -16,18 +16,8 @@ import yaml
 from .engine.metrics import sharpe, sharpe_bootstrap
 
 
-# We intentionally reuse WebUI modules for period building + data loading + FOMC masking.
-#
-# Why this dependency direction is OK here:
-# - Parity is the priority: the CLI R&D loop (rnd.py) must match what the WebUI runs,
-#   otherwise we end up debugging "why don't the numbers match?" across pipelines.
-# - If this ever becomes painful (extra deps / circular imports), extract the shared
-#   functions into a neutral module (e.g. quantlab/inputs.py) and have both import it.
-from .webui.periods import build_periods
-from .webui.runner import data_needs, load_period_data, load_time_filter_mask  # type: ignore
-from .webui.config import WORKSPACE
-from .strategies.trend_following import TrendStrategyWithGates
-from .strategies.base import BacktestConfig
+# Same run pipeline as the webapp and the regression tests (see quantlab/pipeline.py).
+from .pipeline import prepare_periods, run_config_periods
 
 
 @dataclass(frozen=True)
@@ -240,106 +230,6 @@ def _score_candidate(
     return score, df
 
 
-@dataclass(frozen=True)
-class PreparedPeriod:
-    name: str
-    start: dt.date
-    end: dt.date
-    prices: pd.Series | pd.DataFrame
-    context: dict[str, Any]
-    allow_mask: Any
-
-
-def _prepare_best_trend_inputs(cfg: dict[str, Any]) -> list[PreparedPeriod]:
-    """Load all data once per period for speed during sweeps."""
-    periods = build_periods(cfg)
-
-    symbol = cfg.get("symbol", "XAUUSD")
-    corr_symbol = cfg.get("corr_symbol", "XAGUSD")
-    corr2_symbol = cfg.get("corr2_symbol", "EURUSD")
-    # Load only the inputs the configured gates read (e.g. XAGUSD/EURUSD only for `corr`).
-    needs = data_needs(cfg)
-
-    # time_filter mask is loaded per-period via webui.runner.load_time_filter_mask
-    # (supports both fomc and econ_calendar kinds).
-
-    out: list[PreparedPeriod] = []
-    for name, start, end in periods:
-        data = load_period_data(
-            symbol,
-            start,
-            end,
-            **needs,
-            corr_symbol=corr_symbol,
-            corr2_symbol=corr2_symbol,
-        )
-        # NOTE: allow_mask is intentionally NOT cached here. Sweeps may vary
-        # time_filter parameters, so the mask must be recomputed per candidate.
-        context = {
-            "bars_15m": data.get("bars_15m"),
-            "prices_xag": data.get("prices_xag"),
-            "prices_eur": data.get("prices_eur"),
-        }
-        out.append(
-            PreparedPeriod(
-                name=name,
-                start=start,
-                end=end,
-                prices=data["prices"],
-                context=context,
-                allow_mask=None,
-            )
-        )
-    return out
-
-
-def _run_best_trend_periods(
-    cfg: dict[str, Any],
-    *,
-    record_executions: bool = False,
-    prepared: list[PreparedPeriod] | None = None,
-) -> dict[str, pd.DataFrame]:
-    costs = cfg.get("costs", {}) or {}
-    bt_cfg = BacktestConfig(
-        fee_per_lot=float(costs.get("fee_per_lot", 0.0) or 0.0),
-        spread_per_lot=float(costs.get("spread_per_lot", 0.0) or 0.0),
-        record_executions=bool(record_executions),
-    )
-
-    if prepared is None:
-        prepared = _prepare_best_trend_inputs(cfg)
-
-    # Sweeps reuse inputs loaded for the base config. Fail loudly if this candidate's
-    # gates need data that wasn't loaded (the gates would otherwise silently no-op).
-    needs = data_needs(cfg)
-    for p in prepared:
-        missing = [k for k, need in (("bars_15m", needs["need_htf"]), ("prices_xag", needs["need_corr"]))
-                   if need and p.context.get(k) is None]
-        if missing:
-            raise ValueError(f"{p.name}: config needs {missing}, which were not loaded for this run")
-
-    out: dict[str, pd.DataFrame] = {}
-    for p in prepared:
-        # Recompute time_filter mask per config (important for sweeps).
-        allow_mask = load_time_filter_mask(
-            pd.DatetimeIndex(p.prices.index),
-            p.start,
-            p.end,
-            cfg=cfg,
-            workspace=WORKSPACE,
-        )
-        strat = TrendStrategyWithGates.from_config(cfg, allow_mask=allow_mask)
-
-        # Also provide allow_mask in context for extra robustness.
-        ctx = dict(p.context)
-        ctx["allow_mask"] = allow_mask
-
-        res = strat.run_backtest(p.prices, context=ctx, config=bt_cfg)
-        out[p.name] = res.df
-
-    return out
-
-
 def _decision_dir(slug: str) -> Path:
     root = Path(__file__).resolve().parents[0] / "reports" / "trend_based" / "decisions"
     root.mkdir(parents=True, exist_ok=True)
@@ -417,7 +307,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     cfg = validate_config_dict(cfg)
 
-    period_dfs = _run_best_trend_periods(cfg)
+    period_dfs = run_config_periods(cfg)
 
     score_exclude = list(((cfg.get("periods", {}) or {}).get("score_exclude") or []) or [])
     score, results_df = _score_candidate(
@@ -565,7 +455,7 @@ def cmd_sweep(args: argparse.Namespace) -> int:
     log = (print if (getattr(args, "format", "json") or "json").strip().lower() == "text" else (lambda *a, **k: print(*a, **k, file=sys.stderr)))
 
     log("Preparing period data (cached for sweep)...", flush=True)
-    prepared = _prepare_best_trend_inputs(base_cfg)
+    prepared = prepare_periods(base_cfg)
     log(f"Prepared {len(prepared)} periods. Starting {len(combos)} candidates...", flush=True)
 
     from pydantic import ValidationError
@@ -584,7 +474,7 @@ def cmd_sweep(args: argparse.Namespace) -> int:
             skipped_invalid += 1
             continue
 
-        period_dfs = _run_best_trend_periods(cfg, prepared=prepared)
+        period_dfs = run_config_periods(cfg, prepared=prepared)
         score_exclude = list(((cfg.get("periods", {}) or {}).get("score_exclude") or []) or [])
         score, results_df = _score_candidate(
             period_dfs,

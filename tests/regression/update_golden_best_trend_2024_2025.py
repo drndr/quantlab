@@ -20,8 +20,8 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from quantlab.webui.runner import WORKSPACE, load_period_data, load_fomc_mask
-from quantlab.strategies import BacktestConfig, TrendStrategyWithGates
+from quantlab.paths import WORKSPACE
+from quantlab.pipeline import run_config_periods
 
 
 HERE = Path(__file__).resolve()
@@ -32,45 +32,8 @@ OUT_CFG = GOLDEN_DIR / "best_trend_2024_2025_config.yaml"
 
 
 def run_best_trend(cfg: dict) -> pd.DataFrame:
-    start = dt.date(2024, 1, 1)
-    end = dt.date(2025, 12, 31)
-
-    symbol = cfg.get("symbol", "XAUUSD")
-    corr_symbol = cfg.get("corr_symbol", "XAGUSD")
-    corr2_symbol = cfg.get("corr2_symbol", "EURUSD")
-
-    costs = cfg.get("costs", {}) or {}
-    bt_cfg = BacktestConfig(
-        fee_per_lot=float(costs.get("fee_per_lot", 0.0) or 0.0),
-        spread_per_lot=float(costs.get("spread_per_lot", 0.0) or 0.0),
-        record_executions=False,
-    )
-
-    data = load_period_data(
-        symbol,
-        start,
-        end,
-        need_htf=True,
-        need_corr=True,
-        corr_symbol=corr_symbol,
-        corr2_symbol=corr2_symbol,
-    )
-
-    fomc_path = WORKSPACE / cfg.get("time_filter", {}).get("fomc", {}).get(
-        "days_csv", "quantlab/data/econ_calendar/fomc_decision_days.csv"
-    )
-    fomc_cfg = cfg.get("time_filter", {}).get("fomc", {})
-    allow_mask = load_fomc_mask(data["prices"].index, start, end, fomc_path, fomc_cfg)
-
-    strat = TrendStrategyWithGates.from_config(cfg, allow_mask=allow_mask)
-    context = {
-        "bars_15m": data.get("bars_15m"),
-        "prices_xag": data.get("prices_xag"),
-        "prices_eur": data.get("prices_eur"),
-    }
-
-    result = strat.run_backtest(data["prices"], context=context, config=bt_cfg)
-    bt = result.df.copy()
+    period = ("2024-2025", dt.date(2024, 1, 1), dt.date(2025, 12, 31))
+    bt = run_config_periods(cfg, [period])[period[0]].copy()
     bt.index = pd.to_datetime(bt.index, utc=True)
     bt = bt.sort_index()
     return bt[["position", "returns_net", "equity"]]

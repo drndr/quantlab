@@ -1,4 +1,4 @@
-"""Period building for WebUI backtests.
+"""Period building for backtests (webapp, rnd, tests).
 
 Supports:
 - three_block: config-defined p1/p2/p3 blocks

@@ -127,6 +127,7 @@ class Strategy(Protocol):
         *,
         context: dict | None = None,
         config: BacktestConfig | None = None,
+        evaluate_from: pd.Timestamp | None = None,
     ) -> BacktestResult:
         """Run a full backtest.
 
@@ -137,6 +138,8 @@ class Strategy(Protocol):
             prices: Main price series.
             context: Additional data for signal generation.
             config: Backtest engine configuration.
+            evaluate_from: If set, signals use all of `prices` (indicator warm-up) but
+                trading and metrics start at this timestamp.
 
         Returns:
             BacktestResult with equity curve, trades, and metrics.
@@ -185,6 +188,7 @@ class StrategyBase:
         *,
         context: dict | None = None,
         config: BacktestConfig | None = None,
+        evaluate_from: pd.Timestamp | None = None,
     ) -> BacktestResult:
         """Default backtest implementation using the unified engine."""
         if config is None:
@@ -194,6 +198,10 @@ class StrategyBase:
 
         # Generate positions
         positions = self.generate_positions(prices, context=context)
+        if evaluate_from is not None:
+            # Indicators were warmed up on the bars before `evaluate_from`;
+            # trade and measure only from there.
+            prices = prices[prices.index >= evaluate_from]
         # Run backtest engine
         df = backtest_positions_account_margin(
             prices=prices,

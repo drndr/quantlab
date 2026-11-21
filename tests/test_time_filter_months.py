@@ -2,8 +2,8 @@ import datetime as dt
 
 import pandas as pd
 
-from quantlab.webui.runner import load_time_filter_mask
-from quantlab.webui.config import WORKSPACE
+from quantlab.paths import WORKSPACE
+from quantlab.pipeline import load_time_filter_mask
 
 
 def test_time_filter_months_blocks_june() -> None:

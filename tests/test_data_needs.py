@@ -9,8 +9,7 @@ import pandas as pd
 import pytest
 import yaml
 
-import quantlab.rnd as rnd
-from quantlab.webui.runner import data_needs
+from quantlab.pipeline import PreparedPeriod, data_needs, run_config_periods
 
 EMA_SEP = {"gate": "ema_sep", "params": {"ema_fast": 50, "ema_slow": 300, "atr_n": 20, "sep_k": 0.07}}
 CORR = {"gate": "corr", "params": {}}
@@ -42,14 +41,13 @@ def test_canonical_config_does_not_need_xag_or_eur() -> None:
 def test_sweep_candidate_needing_unloaded_data_fails_loudly() -> None:
     idx = pd.date_range("2026-01-01", periods=10, freq="5min", tz="UTC")
     prepared = [
-        rnd.PreparedPeriod(
+        PreparedPeriod(
             name="P",
             start=dt.date(2026, 1, 1),
             end=dt.date(2026, 1, 1),
             prices=pd.Series(100.0, index=idx),
             context={"bars_15m": None, "prices_xag": None, "prices_eur": None},
-            allow_mask=None,
         )
     ]
     with pytest.raises(ValueError, match="prices_xag"):
-        rnd._run_best_trend_periods(_cfg(TIME, CORR), prepared=prepared)
+        run_config_periods(_cfg(TIME, CORR), prepared=prepared)

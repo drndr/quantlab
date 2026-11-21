@@ -61,6 +61,9 @@ class Periods(_ForbidExtra):
     mode: Literal["three_block", "yearly"] = "three_block"
     score_exclude: list[str] = Field(default_factory=list)
     three_block: PeriodsThreeBlock | None = None
+    # Extra days loaded before each period so indicators start warmed up.
+    # Trading and metrics still start at the period start. 0 = cold start.
+    warmup_days: int = Field(default=0, ge=0)
 
 
 class Costs(_ForbidExtra):

@@ -6,6 +6,8 @@ roots:
   root_15m_ohlc: quantlab/data/dukascopy_15m_ohlc
 periods:
   mode: three_block
+  # Indicator warm-up before each period (slowest: EMA 300 on 15m bars).
+  warmup_days: 21
   score_exclude:
   - '2026'
   three_block:
