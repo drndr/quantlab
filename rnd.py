@@ -17,7 +17,26 @@ from .engine.metrics import sharpe, sharpe_bootstrap
 
 
 # Same run pipeline as the webapp and the regression tests (see quantlab/pipeline.py).
-from .pipeline import prepare_periods, run_config_periods
+from .periods import build_periods
+from .pipeline import Period, prepare_periods, run_config_periods
+
+
+def _holdout(cfg: dict[str, Any]) -> list[str]:
+    """Holdout period names (`periods.score_exclude`)."""
+    return list(((cfg.get("periods", {}) or {}).get("score_exclude") or []) or [])
+
+
+def _tuning_periods(cfg: dict[str, Any], *, with_holdout: bool) -> list[Period]:
+    """The config's periods, without the holdout unless asked for.
+
+    Holdout periods are not even run while tuning, so their results can't steer
+    decisions. --with-holdout is for the final check of a frozen candidate.
+    """
+    periods = build_periods(cfg)
+    if with_holdout:
+        return periods
+    holdout = set(_holdout(cfg))
+    return [p for p in periods if p[0] not in holdout]
 
 
 @dataclass(frozen=True)
@@ -260,7 +279,8 @@ def _write_decision_bundle(
 
     holdout_line = ""
     if notes.get("score_exclude"):
-        holdout_line = f"Holdout (excluded from score): {notes.get('score_exclude')}\n\n"
+        how = "run, excluded from score" if notes.get("with_holdout") else "not run"
+        holdout_line = f"Holdout ({how}): {notes.get('score_exclude')}\n\n"
 
     decision_md = (
         f"# Decision: {slug}\n\n"
@@ -307,9 +327,9 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     cfg = validate_config_dict(cfg)
 
-    period_dfs = run_config_periods(cfg)
+    period_dfs = run_config_periods(cfg, _tuning_periods(cfg, with_holdout=args.with_holdout))
 
-    score_exclude = list(((cfg.get("periods", {}) or {}).get("score_exclude") or []) or [])
+    score_exclude = _holdout(cfg)
     score, results_df = _score_candidate(
         period_dfs,
         dd_cap_percent=float(args.dd_cap),
@@ -322,6 +342,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         + "\n\n"
         + f"OK={score.ok}  sum_pnl={score.sum_pnl:.2f}%  worst_maxdd={score.worst_maxdd:.2f}%  avg_sharpe={score.avg_sharpe:.2f}"
     )
+    if score_exclude and not args.with_holdout:
+        text += f"\nHoldout not run: {score_exclude} (--with-holdout for the final check)"
 
     payload = {
         "kind": "run",
@@ -338,6 +360,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         },
         "periods": results_df.to_dict(orient="records"),
         "score_exclude": list(score_exclude),
+        "with_holdout": bool(args.with_holdout),
     }
 
     _emit(args, payload=payload, text=text)
@@ -350,6 +373,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             "dd_cap_percent": float(args.dd_cap),
             "initial_capital": float(args.initial_capital),
             "score_exclude": list(score_exclude),
+            "with_holdout": bool(args.with_holdout),
         }
         d = _write_decision_bundle(
             slug=args.decision_slug,
@@ -455,7 +479,7 @@ def cmd_sweep(args: argparse.Namespace) -> int:
     log = (print if (getattr(args, "format", "json") or "json").strip().lower() == "text" else (lambda *a, **k: print(*a, **k, file=sys.stderr)))
 
     log("Preparing period data (cached for sweep)...", flush=True)
-    prepared = prepare_periods(base_cfg)
+    prepared = prepare_periods(base_cfg, _tuning_periods(base_cfg, with_holdout=args.with_holdout))
     log(f"Prepared {len(prepared)} periods. Starting {len(combos)} candidates...", flush=True)
 
     from pydantic import ValidationError
@@ -475,12 +499,11 @@ def cmd_sweep(args: argparse.Namespace) -> int:
             continue
 
         period_dfs = run_config_periods(cfg, prepared=prepared)
-        score_exclude = list(((cfg.get("periods", {}) or {}).get("score_exclude") or []) or [])
         score, results_df = _score_candidate(
             period_dfs,
             dd_cap_percent=dd_cap,
             initial_capital=initial_capital,
-            score_exclude=score_exclude,
+            score_exclude=_holdout(cfg),
         )
 
         row = {"i": idx}
@@ -522,7 +545,8 @@ def cmd_sweep(args: argparse.Namespace) -> int:
         "dd_cap_percent": float(dd_cap),
         "top_k": int(top_k),
         "topk": topk_df.to_dict(orient="records"),
-        "score_exclude": list(((base_cfg.get("periods", {}) or {}).get("score_exclude") or []) or []),
+        "score_exclude": _holdout(base_cfg),
+        "with_holdout": bool(args.with_holdout),
     }
 
     _emit(args, payload=payload, text=text)
@@ -539,7 +563,8 @@ def cmd_sweep(args: argparse.Namespace) -> int:
             "sweep_kind": kind,
             "n_candidates": len(combos),
             "grid": {k: grid[k] for k in keys},
-            "score_exclude": list(((best_cfg.get("periods", {}) or {}).get("score_exclude") or []) or []),
+            "score_exclude": _holdout(best_cfg),
+            "with_holdout": bool(args.with_holdout),
         }
         d = _write_decision_bundle(
             slug=args.decision_slug,
@@ -558,6 +583,12 @@ def cmd_sweep(args: argparse.Namespace) -> int:
     return 0
 
 
+WITH_HOLDOUT_HELP = (
+    "Also run the holdout periods (periods.score_exclude; still not scored). "
+    "Only for the final check of a frozen candidate."
+)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="quantlab.rnd", description="Low-token R&D runner for best_trend")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -574,6 +605,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Output format (default: json)",
     )
     ap_run.add_argument("--decision-slug", default="", help="If set, write decision bundle under reports/trend_based/decisions")
+    ap_run.add_argument("--with-holdout", action="store_true", help=WITH_HOLDOUT_HELP)
     ap_run.set_defaults(func=cmd_run)
 
     ap_sw = sub.add_parser("sweep", help="Run a grid sweep from sweeps.yaml")
@@ -587,6 +619,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap_sw.add_argument("--decision-slug", default="", help="If set, write decision bundle")
     ap_sw.add_argument("--progress", default="", help="Print progress every N combos")
+    ap_sw.add_argument("--with-holdout", action="store_true", help=WITH_HOLDOUT_HELP)
     ap_sw.set_defaults(func=cmd_sweep)
 
     args = ap.parse_args(argv)

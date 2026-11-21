@@ -71,6 +71,9 @@ Run commands from the workspace folder: the parent of this repo, which must be c
 # Single scoring run
 .venv/bin/python -m quantlab.rnd run --config quantlab/configs/trend_based/current.yaml
 
+# Holdout periods (periods.score_exclude, i.e. 2026) are not run while tuning.
+# Add --with-holdout only for the final check of a frozen candidate.
+
 # (Optional) Sweeps
 # Sweeps are driven by `quantlab.rnd sweep` and dotted-path keys (see `--help`).
 # Decision bundles are written under `quantlab/reports/trend_based/decisions/`.
