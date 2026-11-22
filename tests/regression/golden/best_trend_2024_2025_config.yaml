@@ -30,12 +30,8 @@ trend:
   slow: 75
 
 time_filter:
-  kind: fomc
-  fomc:
-    days_csv: data/econ_calendar/fomc_decision_days.csv
-    utc_hhmm: '19:00'
-    pre_hours: 2.0
-    post_hours: 0.5
+  events:
+    FOMC: {pre_hours: 2.0, post_hours: 0.5}
 
 pipeline:
   - gate: htf_confirm

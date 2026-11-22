@@ -104,6 +104,8 @@ quantlab-download --source ticks --symbols XAUUSD XAGUSD EURUSD --days 7
 python -m quantlab.data.validate
 ```
 
+The time filter's event calendar (`data/econ_calendar/events.csv`, e.g. FOMC statements) is maintained by hand; see `data/econ_calendar/README.md`.
+
 **Data formats** (folders under `data/`):
 | Folder | Columns |
 |--------|---------|
@@ -132,7 +134,7 @@ python -m quantlab.data.validate
 | `nochop` | Entry filter | Require N closes above EMA in lookback (sustained trend) |
 | `htf_confirm` | Entry filter | Require HTF SMA fast > slow |
 | `corr` | Entry filter + sizing | Correlation stability filter + confirm sizing (XAG/EUR) |
-| `time_filter` | Time filter | Block FOMC windows, force-flat specific months |
+| `time_filter` | Time filter | Force flat around calendar events (FOMC, CPI, …) and in blocked months |
 | `ema_strength_sizing` | Sizing | Size up when HTF EMA separation is strong |
 | `seasonality_cap` | Sizing | Cap position size by calendar month |
 | `churn` | Churn control | Entry debounce + re-entry cooldown |

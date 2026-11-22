@@ -1,28 +1,28 @@
-# Economic calendar dataset (USD important events)
+# Event calendar
 
-This folder is intended to hold a machine-readable economic calendar for **high-impact USD events** (e.g. CPI, NFP, FOMC, GDP, Retail Sales, Core PCE, ISM, etc.).
+`events.csv` lists the events the time filter can flatten around (`time_filter.events` in the
+config). It is maintained by hand, one row per event, in **New York time** exactly as the
+official source states it; the filter converts to UTC (daylight saving included) when loading.
 
-## Files
+| Column | Meaning |
+|---|---|
+| `date` | Release date (New York) |
+| `time_et` | Release time (New York), `HH:MM` |
+| `event` | Event code used in the config, e.g. `FOMC` |
+| `note` | Optional (e.g. why an unscheduled event happened) |
 
-- `usd_important_events.csv` — main dataset (one row per release/event)
-- `usd_important_events.schema.json` — informal schema
-- `sources.md` — where the dates come from (links + notes)
+The filter refuses to run (rather than silently filtering nothing) if a configured event code is
+missing from this file, or if the file doesn't cover the backtest period for that code.
 
-## CSV columns (proposed)
+## FOMC
 
-- `ts_utc` (ISO8601, e.g. `2026-03-12T12:30:00Z`) — event timestamp in UTC
-- `country` (e.g. `US`)
-- `ccy` (e.g. `USD`)
-- `event` (short name, e.g. `CPI YoY`, `Nonfarm Payrolls`, `FOMC Rate Decision`)
-- `category` (e.g. `inflation`, `labor`, `rates`, `growth`)
-- `importance` (`high` | `medium` | `low`) — we will keep only `high` for this dataset
-- `source` (string)
-- `notes` (string)
+Every FOMC policy statement 2020–2026, from the Federal Reserve's meeting calendars
+(https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm and `fomchistorical<year>.htm`),
+with the release time from each statement's press release: 14:00 for scheduled meetings; the
+2020 emergency actions at their actual times. New meetings: add a row.
 
-## How to populate
+## Adding other events
 
-This repo currently has **no working web search/browser tooling**, so we cannot automatically download calendars from the internet.
-
-Two options:
-1) Provide a source export (CSV/ICS) from your preferred calendar provider (ForexFactory/Investing/TradingEconomics/etc.).
-2) Enable web_search (Brave API key) or a browser relay, then we can fetch official schedules (BLS/BEA/FOMC) and build the dataset.
+Add rows with a new code (e.g. `CPI`, `NFP`) and their release times (US data releases come out
+at 08:30 New York time), then give the code a window in the config. FRED's release-date API
+(https://fred.stlouisfed.org/docs/api/fred/) lists the dates for CPI, NFP, PCE, GDP and retail sales.

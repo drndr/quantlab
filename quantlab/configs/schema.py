@@ -83,16 +83,9 @@ class Trend(_ForbidExtra):
         return self
 
 
-class TimeFilterFOMC(_ForbidExtra):
-    days_csv: str = "data/econ_calendar/fomc_decision_days.csv"
-    utc_hhmm: str = "19:00"
-    pre_hours: float = 2.0
-    post_hours: float = 0.5
-
-
-class TimeFilterEconCalendar(_ForbidExtra):
-    csv: str = "data/econ_calendar/usd_important_events.csv"
-    rules: dict[str, Any] = Field(default_factory=dict)
+class EventWindowHours(_ForbidExtra):
+    pre_hours: float = Field(default=0.0, ge=0)
+    post_hours: float = Field(default=0.0, ge=0)
 
 
 class TimeFilterMonths(_ForbidExtra):
@@ -108,9 +101,10 @@ class TimeFilterMonths(_ForbidExtra):
 
 
 class TimeFilter(_ForbidExtra):
-    kind: Literal["fomc", "econ_calendar", "months"] = "fomc"
-    fomc: TimeFilterFOMC | None = None
-    econ_calendar: TimeFilterEconCalendar | None = None
+    """Force flat around calendar events and in blocked months (both optional)."""
+
+    # Event code in data/econ_calendar/events.csv (e.g. FOMC) -> flat window around it.
+    events: dict[str, EventWindowHours] | None = None
     months: TimeFilterMonths | None = None
 
 

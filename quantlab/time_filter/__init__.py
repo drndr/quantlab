@@ -17,9 +17,9 @@ from .core import (
     SessionWindow,
     apply_time_filter,
     build_allow_mask_from_events,
-    build_allow_mask_from_sessions,
-    build_allow_mask_from_econ_calendar,
     build_allow_mask_from_months,
+    build_allow_mask_from_sessions,
+    load_calendar_events,
 )
 
 __all__ = [
@@ -27,7 +27,7 @@ __all__ = [
     "SessionWindow",
     "apply_time_filter",
     "build_allow_mask_from_events",
-    "build_allow_mask_from_sessions",
-    "build_allow_mask_from_econ_calendar",
     "build_allow_mask_from_months",
+    "build_allow_mask_from_sessions",
+    "load_calendar_events",
 ]

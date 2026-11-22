@@ -18,15 +18,10 @@ from typing import Any
 import pandas as pd
 
 from .data.loaders import load_dukascopy_ohlc
-from .paths import DATA_ROOTS, WORKSPACE
+from .paths import DATA_ROOTS, EVENT_CALENDAR
 from .periods import build_periods
 from .strategies import BacktestConfig, TrendStrategyWithGates
-from .time_filter import (
-    EventWindow,
-    build_allow_mask_from_econ_calendar,
-    build_allow_mask_from_events,
-    build_allow_mask_from_months,
-)
+from .time_filter import build_allow_mask_from_events, build_allow_mask_from_months, load_calendar_events
 
 Period = tuple[str, dt.date, dt.date]
 
@@ -158,101 +153,35 @@ def prepare_periods(
 # ---------------------------------------------------------------------------
 
 
-def load_fomc_mask(
-    index: pd.DatetimeIndex,
-    start: dt.date,
-    end: dt.date,
-    fomc_days_path: Path,
-    fomc_cfg: dict | None = None,
-) -> pd.Series | None:
-    """Build FOMC allow mask for the period."""
-    if not fomc_days_path.exists():
-        return None
-
-    fomc_cfg = fomc_cfg or {}
-    utc_hhmm = fomc_cfg.get("utc_hhmm", "19:00")
-    pre_hours = fomc_cfg.get("pre_hours", 2.0)
-    post_hours = fomc_cfg.get("post_hours", 0.5)
-
-    df = pd.read_csv(fomc_days_path)
-    if "date" not in df.columns:
-        return None
-
-    days = [dt.date.fromisoformat(str(x)) for x in df["date"].tolist()]
-    days = [d for d in days if start <= d <= end]
-
-    if not days:
-        return None
-
-    hh, mm = (int(x) for x in utc_hhmm.split(":"))
-    events = [
-        EventWindow(
-            ts=pd.Timestamp(dt.datetime(d.year, d.month, d.day, hh, mm, tzinfo=dt.UTC)),
-            pre=dt.timedelta(hours=pre_hours),
-            post=dt.timedelta(hours=post_hours),
-        )
-        for d in days
-    ]
-
-    return build_allow_mask_from_events(index, events=events)
-
-
 def load_time_filter_mask(
     index: pd.DatetimeIndex,
     start: dt.date,
     end: dt.date,
     *,
     cfg: dict,
-    workspace: Path,
+    calendar: Path = EVENT_CALENDAR,
 ) -> pd.Series | None:
-    """Load allow mask for the configured time_filter kind.
+    """Allow-mask for `time_filter` (False = force flat): blocked months + event windows.
 
-    Supported kinds:
-    - fomc
-    - econ_calendar
-    - months (months-only force-flat; no event windows)
+    None when the config has no time_filter (the time_filter gate is then a no-op).
+    A calendar that is missing or doesn't cover start..end for a configured event
+    raises (see load_calendar_events) instead of silently filtering nothing.
     """
-    tf = cfg.get("time_filter", {}) or {}
-    kind = (tf.get("kind") or "fomc").strip().lower()
+    tf = cfg.get("time_filter") or {}
+    if not tf:
+        return None
 
-    # Optional month blocking overlay (force-flat semantics).
-    months_cfg = tf.get("months", {}) or {}
-    block_months = months_cfg.get("block") or []
-    m_mask = build_allow_mask_from_months(index, block=block_months)
+    allow = build_allow_mask_from_months(index, block=(tf.get("months") or {}).get("block") or [])
 
-    if kind == "months":
-        return pd.Series(m_mask, index=index).astype(bool)
+    windows = {
+        code: (float(w.get("pre_hours", 0.0)), float(w.get("post_hours", 0.0)))
+        for code, w in (tf.get("events") or {}).items()
+    }
+    if windows:
+        events = load_calendar_events(calendar, windows=windows, start=start, end=end)
+        allow = allow & build_allow_mask_from_events(index, events=events)
 
-    if kind == "fomc":
-        fomc_cfg = tf.get("fomc", {}) or {}
-        days_csv = fomc_cfg.get("days_csv", "data/econ_calendar/fomc_decision_days.csv")
-        mask = load_fomc_mask(index, start, end, workspace / str(days_csv), fomc_cfg)
-
-        if mask is None:
-            return m_mask
-        return (pd.Series(mask, index=index).astype(bool) & pd.Series(m_mask, index=index).astype(bool)).astype(bool)
-
-    if kind == "econ_calendar":
-        ec = tf.get("econ_calendar", {}) or {}
-        csv_rel = ec.get("csv", "data/econ_calendar/usd_important_events.csv")
-        rules = ec.get("rules", {}) or {}
-
-        csv_path = str((workspace / str(csv_rel)).resolve())
-
-        mask = build_allow_mask_from_econ_calendar(
-            index,
-            start=start,
-            end=end,
-            csv_path=csv_path,
-            rules=rules,
-        )
-
-        if mask is None:
-            return m_mask
-        return (pd.Series(mask, index=index).astype(bool) & pd.Series(m_mask, index=index).astype(bool)).astype(bool)
-
-    # Unknown kind -> no mask
-    return None
+    return allow.astype(bool)
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +232,7 @@ def run_config_periods(
     out: dict[str, pd.DataFrame] = {}
     for p in prepared:
         load_start = p.load_start or p.start
-        mask = load_time_filter_mask(pd.DatetimeIndex(p.prices.index), load_start, p.end, cfg=cfg, workspace=WORKSPACE)
+        mask = load_time_filter_mask(pd.DatetimeIndex(p.prices.index), load_start, p.end, cfg=cfg)
         strategy = TrendStrategyWithGates.from_config(cfg, allow_mask=mask)
         result = strategy.run_backtest(
             p.prices,

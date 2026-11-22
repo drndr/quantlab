@@ -14,6 +14,8 @@ QUANTLAB = WORKSPACE / "quantlab"
 DATA = WORKSPACE / "data"
 REPORTS = WORKSPACE / "reports"
 
+EVENT_CALENDAR = DATA / "econ_calendar" / "events.csv"  # time_filter events (New York time)
+
 DATA_ROOTS = {
     "5m_ohlc": DATA / "dukascopy_5m_ohlc",
     "15m_ohlc": DATA / "dukascopy_15m_ohlc",

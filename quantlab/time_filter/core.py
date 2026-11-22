@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass
+from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -148,108 +150,58 @@ def build_allow_mask_from_events(index: pd.DatetimeIndex, *, events: list[EventW
     return allow.astype(bool)
 
 
-def build_allow_mask_from_econ_calendar(
-    index: pd.DatetimeIndex,
+# A configured event type with no event this close to the period's start or end means
+# the calendar doesn't cover the period (the longest normal gap, between FOMC meetings,
+# is about 7 weeks).
+CALENDAR_COVERAGE_SLACK = dt.timedelta(days=60)
+
+
+NEW_YORK = ZoneInfo("America/New_York")
+
+
+def new_york_to_utc(date: str, time_et: str) -> pd.Timestamp:
+    """New York local date + HH:MM -> UTC (daylight saving aware: 14:00 ET is 18:00 or 19:00 UTC)."""
+    d = dt.date.fromisoformat(date)
+    hh, mm = _parse_hhmm(time_et)
+    return pd.Timestamp(dt.datetime(d.year, d.month, d.day, hh, mm, tzinfo=NEW_YORK)).tz_convert("UTC")
+
+
+def load_calendar_events(
+    csv_path: str | Path,
     *,
+    windows: dict[str, tuple[float, float]],
     start: dt.date,
     end: dt.date,
-    csv_path: str,
-    rules: dict[str, dict],
-    default_tz: str = "UTC",
-) -> pd.Series | None:
-    """Build allow-mask from usd_important_events.csv style calendar.
+) -> list[EventWindow]:
+    """Event windows for `start..end` from the calendar CSV (date, time_et, event; New York time).
 
-    The CSV stores dates as ts_utc at 00:00Z (date-only). We override the time-of-day
-    per rule via `utc_hhmm`.
+    windows: event code -> (hours before, hours after). Only these codes are used.
 
-    Parameters
-    ----------
-    rules:
-      Mapping of rule_name -> config dict with keys:
-        - match: list[str] substrings to match against the `event` field (OR)
-        - utc_hhmm: "HH:MM" release time in UTC
-        - pre_hours: float
-        - post_hours: float
-        - importance: optional list[str] filter (e.g. ["high"]) (default: no filter)
+    Fails loudly instead of silently filtering nothing: raises if the file is missing,
+    a configured code isn't in it, or the calendar doesn't cover the period for a code.
     """
-    if csv_path is None:
-        return None
+    csv_path = Path(csv_path)
+    if not csv_path.exists():
+        raise FileNotFoundError(f"Event calendar not found: {csv_path}")
 
-    import os
+    df = pd.read_csv(csv_path, usecols=["date", "time_et", "event"], dtype=str)
+    df["ts_utc"] = [new_york_to_utc(d, t) for d, t in zip(df["date"], df["time_et"])]
 
-    if not os.path.exists(csv_path):
-        return None
-
-    idx = pd.DatetimeIndex(index)
-    if idx.tz is None:
-        idx = idx.tz_localize("UTC")
-
-    df = pd.read_csv(csv_path)
-    if df is None or len(df) == 0:
-        return None
-
-    if "ts_utc" not in df.columns or "event" not in df.columns:
-        return None
-
-    df = df.copy()
-    df["ts_utc"] = pd.to_datetime(df["ts_utc"], utc=True, errors="coerce")
-    df = df.dropna(subset=["ts_utc"]).copy()
-
-    # date range filter (by date part)
-    d0 = pd.Timestamp(start).tz_localize("UTC")
-    d1 = pd.Timestamp(end).tz_localize("UTC") + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
-    df = df[(df["ts_utc"] >= d0) & (df["ts_utc"] <= d1)].copy()
-
-    if df.empty:
-        return None
-
+    lo = pd.Timestamp(start, tz="UTC")
+    hi = pd.Timestamp(end, tz="UTC") + pd.Timedelta(days=1)
     events: list[EventWindow] = []
-
-    for _rule_name, rule in (rules or {}).items():
-        if not isinstance(rule, dict):
-            continue
-
-        match = rule.get("match") or []
-        if isinstance(match, str):
-            match = [match]
-        match = [str(x) for x in match if str(x)]
-        if not match:
-            continue
-
-        utc_hhmm = str(rule.get("utc_hhmm") or "00:00")
-        hh, mm = _parse_hhmm(utc_hhmm)
-        pre = dt.timedelta(hours=float(rule.get("pre_hours", 0.0) or 0.0))
-        post = dt.timedelta(hours=float(rule.get("post_hours", 0.0) or 0.0))
-
-        imp = rule.get("importance")
-        if isinstance(imp, str):
-            imp = [imp]
-        imp = [str(x) for x in (imp or [])]
-
-        # filter rows matching substrings
-        m = pd.Series(False, index=df.index)
-        for s in match:
-            m = m | df["event"].astype(str).str.contains(s, case=False, na=False, regex=False)
-
-        sub = df[m].copy()
-        if imp and "importance" in sub.columns:
-            sub = sub[sub["importance"].astype(str).isin(imp)].copy()
-
-        if sub.empty:
-            continue
-
-        # Override time-of-day on the date
-        for ts0 in sub["ts_utc"].tolist():
-            ts0 = pd.Timestamp(ts0)
-            if ts0.tzinfo is None:
-                ts0 = ts0.tz_localize("UTC")
-            ts = pd.Timestamp(dt.datetime(ts0.year, ts0.month, ts0.day, hh, mm, tzinfo=dt.UTC))
-            events.append(EventWindow(ts=ts, pre=pre, post=post))
-
-    if not events:
-        return None
-
-    return build_allow_mask_from_events(idx, events=events)
+    for code, (pre_hours, post_hours) in windows.items():
+        ts = df.loc[df["event"] == code, "ts_utc"]
+        if ts.empty:
+            raise ValueError(f"No {code!r} events in {csv_path.name} (codes there: {sorted(df['event'].unique())})")
+        if ts.min() - CALENDAR_COVERAGE_SLACK > lo or ts.max() + CALENDAR_COVERAGE_SLACK < hi:
+            raise ValueError(
+                f"{csv_path.name} has {code} events from {ts.min():%Y-%m-%d} to {ts.max():%Y-%m-%d}, "
+                f"which doesn't cover {start}..{end}"
+            )
+        pre, post = dt.timedelta(hours=pre_hours), dt.timedelta(hours=post_hours)
+        events += [EventWindow(ts=t, pre=pre, post=post) for t in ts if lo - post <= t < hi + pre]
+    return events
 
 
 def apply_time_filter(
