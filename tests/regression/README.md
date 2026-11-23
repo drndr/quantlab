@@ -1,44 +1,30 @@
-# Regression tests (golden series)
+# Golden regression
 
-This folder holds **series-level regression tests** for quantlab.
+Checks that the code still trades exactly as before. Headline metrics can stay similar while the
+execution semantics drift, so this compares **position and equity series**, bar by bar.
 
-Why
----
-Headline metrics can stay roughly similar while the underlying execution semantics drift.
-When refactoring anything that can alter signals/execution (gates, costs, time filtering,
-return math, trade extraction), we regress on **position and equity series**.
+`test_golden.py` runs two weeks of XAUUSD (29 July – 9 August 2024) with one small case per rule:
+each gate, the time filter, the margin check, the warm-up, and several gates together. The settings
+are simple round numbers, independent of the live config, so tuning the strategy never touches this
+test. When it fails, the failing case names the rule that changed.
 
-Best Trend (2024–2025) golden
-----------------------------
-Files:
-- `test_best_trend_2024_2025_series.py` — asserts:
-  - index matches exactly (UTC)
-  - `position` matches **exactly**
-  - `equity` and `returns_net` match with tight tolerance (`atol=1e-10`)
-- `update_golden_best_trend_2024_2025.py` — regenerates golden artifacts
-- `golden/` — contains tracked golden artifacts:
-  - `best_trend_2024_2025_series.csv.gz`
-  - `best_trend_2024_2025_config.yaml`
+- `position` must match exactly, `equity` to 1e-10; `returns_net` must be the return of `equity`.
+- Every gate in the schema needs a case (`corr` is the exception: it needs XAGUSD and EURUSD data).
+- Every case must trade differently from its reference case, so no case can pass by doing nothing.
 
-Run
----
-From repo root:
+## Run
+
+Needs local XAUUSD 5m/15m OHLC data for 24 July – 9 August 2024 (the series check is skipped without it).
 
 ```bash
-.venv/bin/python -m pytest -q tests/regression/test_best_trend_2024_2025_series.py
+pytest tests/regression
 ```
 
-Update golden (intentional semantic changes only)
--------------------------------------------------
-Only update the golden when you *intend* to change execution semantics.
+## Update
+
+Only when you *intend* to change behaviour. Say in the commit message which semantic change it was.
+If you're unsure, don't update: look at the first differing bar in the failure message.
 
 ```bash
-.venv/bin/python tests/regression/update_golden_best_trend_2024_2025.py
+python tests/regression/test_golden.py --update
 ```
-
-Policy
-------
-- Golden updates should be accompanied by a commit message that explains *what semantic change* occurred
-  (e.g. "TimeFilter: force-flat only", "Trade extraction: log1p compounding").
-- If you are unsure whether a change is intended semantic drift, **do not update** the golden.
-  Investigate the first-diff timestamp in the failing test.

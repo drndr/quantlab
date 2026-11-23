@@ -232,19 +232,19 @@ reports/
 
 When touching anything that can alter signals/execution (gates, costs, time-filtering, return math, trade extraction), regress on **position + equity series**, not just headline metrics.
 
-Golden series regression (best_trend 2024–2025):
+Golden regression (two weeks of XAUUSD, one small case per rule; see `tests/regression/README.md`):
 
 ```bash
 # run regression
-pytest tests/regression/test_best_trend_2024_2025_series.py
+pytest tests/regression
 
 # update golden (ONLY when the change is intentional)
-python tests/regression/update_golden_best_trend_2024_2025.py
+python tests/regression/test_golden.py --update
 ```
 
 Notes:
-- Golden artifacts live under `tests/regression/golden/`.
-- The golden config includes the `corr` gate, so the regression needs XAGUSD and EURUSD data as well as XAUUSD.
+- The golden cases don't depend on `current.yaml`; tuning the strategy never touches them.
+- They need local XAUUSD 5m/15m OHLC data for 24 July – 9 August 2024.
 - We bias toward CLI/WebUI parity; the webapp, `quantlab.rnd` and the regression test all run through `pipeline.py`.
 
 ## Requirements

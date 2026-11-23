@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Quantlab safety-check runner (agent-friendly)
 # - runs fast unit tests
-# - runs the golden series regression test
+# - runs the golden regression test
 #
 # Usage:
 #   ./check.sh
@@ -53,8 +53,8 @@ if [[ "$MODE" == "all" || "$MODE" == "unit" ]]; then
 fi
 
 if [[ "$MODE" == "all" || "$MODE" == "regression" ]]; then
-  banner "Regression: golden series (best_trend 2024–2025)"
-  "$PY" -m pytest tests/regression/test_best_trend_2024_2025_series.py
+  banner "Regression: golden series"
+  "$PY" -m pytest tests/regression
 fi
 
 banner "DONE"
