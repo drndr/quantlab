@@ -29,6 +29,7 @@ quantlab-rnd = "quantlab.rnd:main"
 quantlab-download = "quantlab.data.download:main"
 
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["quantlab*"]
 
 [tool.pytest.ini_options]

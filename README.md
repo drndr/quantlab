@@ -14,7 +14,7 @@ It includes a WebUI runner for HTML reports and an agent-friendly `quantlab.rnd`
 
 ```
 <repo>/
-├── quantlab/                    # Python package (code + configs)
+├── src/quantlab/                # Python package (code + configs)
 │   ├── engine/                  # Backtest engine + metrics + trade extraction
 │   │   ├── backtest.py          # Core loop (python + optional numba)
 │   │   ├── metrics.py           # Equity-curve metrics: Sharpe, max-DD, exposure
@@ -65,21 +65,16 @@ Then activate the venv (`source .venv/bin/activate`, Windows: `.venv\Scripts\act
 quantlab-ui --port 8080
 ```
 
-### Report generation (canonical HTML outputs)
-```bash
-python -c "from quantlab.webui.runner import run_backtest; run_backtest('best_trend')"
-```
-
 ### CLI R&D loop (agent-friendly)
 ```bash
 # JSON by default; use --format text for humans.
 
 # Configs
-# - canonical run:     quantlab/configs/trend_based/current.yaml
-# - reference:         quantlab/configs/trend_based/reference/*.yaml
+# - canonical run:     src/quantlab/configs/trend_based/current.yaml
+# - reference:         src/quantlab/configs/trend_based/reference/*.yaml
 
 # Single scoring run
-quantlab-rnd run --config quantlab/configs/trend_based/current.yaml
+quantlab-rnd run --config src/quantlab/configs/trend_based/current.yaml
 
 # Holdout periods (periods.score_exclude, i.e. 2026) are not run while tuning.
 # Add --with-holdout only for the final check of a frozen candidate.
@@ -145,7 +140,7 @@ The time filter's event calendar (`data/econ_calendar/events.csv`, e.g. FOMC sta
 | `rolling_max_exit` | Exit | Exit below rolling max threshold |
 
 ### Registering new gates:
-- Add a new gate class under `quantlab/strategies/gates/` and register it:
+- Add a new gate class under `src/quantlab/strategies/gates/` and register it:
 
 ```python
 from quantlab.strategies.gates.registry import register_gate
@@ -170,7 +165,7 @@ pipeline:
 ## Configuration
 
 Canonical config (tracked):
-- `quantlab/configs/trend_based/current.yaml`
+- `src/quantlab/configs/trend_based/current.yaml`
 
 Gate pipeline config:
 - `current.yaml` uses `pipeline:`, a list of `{gate, params}` entries.
@@ -187,7 +182,7 @@ The WebUI runner and `quantlab.rnd` CLI validate configs on load and will fail f
 
 Validate a YAML file directly:
 ```bash
-python -m quantlab.configs.schema quantlab/configs/trend_based/current.yaml
+python -m quantlab.configs.schema src/quantlab/configs/trend_based/current.yaml
 ```
 
 ## Reports
@@ -196,9 +191,9 @@ python -m quantlab.configs.schema quantlab/configs/trend_based/current.yaml
 **Best strategy documentation:** `reports/trend_based/BEST_TREND_STRATEGY.md`
 
 ### HTML generation code
-- `quantlab/reporting/generate_equity_report.py` (multi-period single-file equity/performance HTML)
-- `quantlab/reporting/generate_robustness_report.py` (robustness surface; currently yearly breakdown table, will expand)
-- `quantlab/reporting/generate_trades_report.py` (multi-period single-file trade breakdown HTML)
+- `src/quantlab/reporting/generate_equity_report.py` (multi-period single-file equity/performance HTML)
+- `src/quantlab/reporting/generate_robustness_report.py` (robustness surface; currently yearly breakdown table, will expand)
+- `src/quantlab/reporting/generate_trades_report.py` (multi-period single-file trade breakdown HTML)
 
 ### Outputs
 ```

@@ -3,7 +3,7 @@
 Entry point for the backtest web UI.
 
 Usage:
-    PYTHONPATH=. .venv/bin/python quantlab/webui/backtest_ui.py --port 8080
+    quantlab-ui --port 8080        (or: python -m quantlab.webui.backtest_ui --port 8080)
 
 Then open http://localhost:8080
 """

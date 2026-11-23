@@ -1,11 +1,11 @@
 """Regenerate golden series for best_trend 2024-2025.
 
 Writes:
-- tests/golden/best_trend_2024_2025_series.csv.gz
-- tests/golden/best_trend_2024_2025_config.yaml
+- tests/regression/golden/best_trend_2024_2025_series.csv.gz
+- tests/regression/golden/best_trend_2024_2025_config.yaml
 
-Run with the repo venv, e.g.:
-  ../.venv/bin/python scripts/regression/update_golden_best_trend_2024_2025.py
+Run from the repo root with the venv active:
+  python tests/regression/update_golden_best_trend_2024_2025.py
 
 This is meant to be run *only* when intentional changes are made to execution
 semantics (gates, costs, time filtering, trade extraction, etc.).
@@ -20,7 +20,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from quantlab.paths import WORKSPACE
+from quantlab.paths import QUANTLAB
 from quantlab.pipeline import run_config_periods
 
 
@@ -42,7 +42,7 @@ def run_best_trend(cfg: dict) -> pd.DataFrame:
 def main() -> None:
     GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
 
-    cfg_path = WORKSPACE / "quantlab/configs/trend_based/current.yaml"
+    cfg_path = QUANTLAB / "configs" / "trend_based" / "current.yaml"
     cfg = yaml.safe_load(cfg_path.read_text()) or {}
 
     # Important: write an isolated snapshot of the config used for the golden.

@@ -20,7 +20,7 @@ elif [[ -n "${1-}" ]]; then
   exit 2
 fi
 
-# Run from the repo root (the folder that contains quantlab/), so `import quantlab` works.
+# Run from the repo root; `import quantlab` needs the editable install (pip install -e .).
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 

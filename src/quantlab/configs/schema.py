@@ -15,7 +15,7 @@ Python:
     cfg = validate_config_dict(cfg_dict)
 
 CLI:
-    python -m quantlab.configs.schema quantlab/configs/trend_based/current.yaml
+    python -m quantlab.configs.schema src/quantlab/configs/trend_based/current.yaml
 
 Notes
 -----
@@ -362,7 +362,7 @@ def validate_config_file(path: str | Path) -> dict[str, Any]:
 
 def _main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Validate Quantlab YAML config (Pydantic schema)")
-    ap.add_argument("path", help="Path to YAML config (e.g. quantlab/configs/trend_based/current.yaml)")
+    ap.add_argument("path", help="Path to YAML config (e.g. src/quantlab/configs/trend_based/current.yaml)")
     ap.add_argument("--json", action="store_true", help="Print normalized config as JSON")
     ap.add_argument(
         "--no-sync-check",

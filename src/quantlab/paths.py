@@ -1,16 +1,16 @@
 """Repo paths.
 
-    <repo>/quantlab/    code (this file is <repo>/quantlab/paths.py)
-    <repo>/data/        datasets (not tracked) + econ_calendar inputs
-    <repo>/reports/     generated reports + decision bundles
+    <repo>/src/quantlab/  code + configs (this file is <repo>/src/quantlab/paths.py)
+    <repo>/data/          datasets (not tracked) + econ_calendar inputs
+    <repo>/reports/       generated reports + decision bundles
 
 Relative paths in configs (e.g. `data/econ_calendar/...`) are relative to <repo>.
 """
 
 from pathlib import Path
 
-WORKSPACE = Path(__file__).resolve().parents[1]  # the repo root
-QUANTLAB = WORKSPACE / "quantlab"
+QUANTLAB = Path(__file__).resolve().parent  # the package: <repo>/src/quantlab
+WORKSPACE = QUANTLAB.parents[1]  # the repo root
 DATA = WORKSPACE / "data"
 REPORTS = WORKSPACE / "reports"
 
