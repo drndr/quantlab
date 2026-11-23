@@ -4,7 +4,10 @@ import base64
 import io
 from pathlib import Path
 
-import matplotlib.pyplot as plt
+import matplotlib
+
+matplotlib.use("Agg")  # PNGs for the HTML only; a GUI backend (Tk) fails intermittently in servers/tests
+import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np
 import pandas as pd
 
