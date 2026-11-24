@@ -4,8 +4,9 @@ import argparse
 import copy
 import datetime as dt
 import json
+import math
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +20,7 @@ from .engine.metrics import sharpe, sharpe_bootstrap
 # Same run pipeline as the webapp and the regression tests (see quantlab/pipeline.py).
 from .paths import REPORTS
 from .periods import build_periods
-from .pipeline import Period, prepare_periods, run_config_periods
+from .pipeline import Period, PreparedPeriod, backtest_config, prepare_periods, run_config_periods
 
 
 def _holdout(cfg: dict[str, Any]) -> list[str]:
@@ -144,11 +145,7 @@ def _period_stats(bt: pd.DataFrame, *, initial_capital: float) -> tuple[float, f
     """
     eq = bt["equity"].astype(float)
 
-    cap0 = float(initial_capital)
-    if cap0 <= 0:
-        cap0 = float(eq.iloc[0]) if len(eq) else 1.0
-
-    pnl = (float(eq.iloc[-1]) / cap0 - 1.0) * 100.0
+    pnl = (float(eq.iloc[-1]) / float(initial_capital) - 1.0) * 100.0
     maxdd = _max_drawdown_percent(eq)
     s = float(sharpe(eq))
     s_ci = sharpe_bootstrap(eq)
@@ -161,7 +158,7 @@ def _score_candidate(
     period_dfs: dict[str, pd.DataFrame],
     *,
     dd_cap_percent: float,
-    initial_capital: float = 1000.0,
+    initial_capital: float,
     score_exclude: list[str] | set[str] | None = None,
 ) -> tuple[CandidateScore, pd.DataFrame]:
     """Score a candidate across periods.
@@ -250,6 +247,31 @@ def _score_candidate(
     return score, df
 
 
+def _run_and_score(
+    cfg: dict[str, Any],
+    prepared: list[PreparedPeriod],
+    *,
+    initial_capital: float,
+    dd_cap_percent: float,
+) -> tuple[CandidateScore, pd.DataFrame]:
+    """Simulate `cfg` and score it, both on the same starting balance."""
+    bt_config = replace(backtest_config(cfg), initial_capital=initial_capital)
+    period_dfs = run_config_periods(cfg, prepared=prepared, bt_config=bt_config)
+    return _score_candidate(
+        period_dfs,
+        dd_cap_percent=dd_cap_percent,
+        initial_capital=bt_config.initial_capital,
+        score_exclude=_holdout(cfg),
+    )
+
+
+def _positive_number(value: Any) -> float:
+    x = float(value)
+    if not 0 < x < math.inf:
+        raise ValueError(f"must be a positive number, got {value!r}")
+    return x
+
+
 def _decision_dir(slug: str) -> Path:
     root = REPORTS / "trend_based" / "decisions"
     root.mkdir(parents=True, exist_ok=True)
@@ -328,14 +350,11 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     cfg = validate_config_dict(cfg)
 
-    period_dfs = run_config_periods(cfg, _tuning_periods(cfg, with_holdout=args.with_holdout))
+    prepared = prepare_periods(cfg, _tuning_periods(cfg, with_holdout=args.with_holdout))
 
     score_exclude = _holdout(cfg)
-    score, results_df = _score_candidate(
-        period_dfs,
-        dd_cap_percent=float(args.dd_cap),
-        initial_capital=float(args.initial_capital),
-        score_exclude=score_exclude,
+    score, results_df = _run_and_score(
+        cfg, prepared, initial_capital=args.initial_capital, dd_cap_percent=float(args.dd_cap)
     )
 
     text = (
@@ -432,7 +451,7 @@ def cmd_sweep(args: argparse.Namespace) -> int:
 
     dd_cap = float(sweep.get("dd_cap_percent", args.dd_cap))
     top_k = int(sweep.get("top_k", 10))
-    initial_capital = float(sweep.get("initial_capital", 1000.0))
+    initial_capital = _positive_number(sweep.get("initial_capital", 1000.0))
 
     kind = (sweep.get("kind") or "grid").strip().lower()
 
@@ -499,12 +518,8 @@ def cmd_sweep(args: argparse.Namespace) -> int:
             skipped_invalid += 1
             continue
 
-        period_dfs = run_config_periods(cfg, prepared=prepared)
-        score, results_df = _score_candidate(
-            period_dfs,
-            dd_cap_percent=dd_cap,
-            initial_capital=initial_capital,
-            score_exclude=_holdout(cfg),
+        score, results_df = _run_and_score(
+            cfg, prepared, initial_capital=initial_capital, dd_cap_percent=dd_cap
         )
 
         row = {"i": idx}
@@ -544,6 +559,7 @@ def cmd_sweep(args: argparse.Namespace) -> int:
         "base": str(base_path),
         "mode": (base_cfg.get("periods", {}) or {}).get("mode"),
         "dd_cap_percent": float(dd_cap),
+        "initial_capital": initial_capital,
         "top_k": int(top_k),
         "topk": topk_df.to_dict(orient="records"),
         "score_exclude": _holdout(base_cfg),
@@ -560,6 +576,7 @@ def cmd_sweep(args: argparse.Namespace) -> int:
             "base": str(base_path),
             "mode": (best_cfg.get("periods", {}) or {}).get("mode"),
             "dd_cap_percent": dd_cap,
+            "initial_capital": initial_capital,
             "objective": "sum_pnl subject_to worst_maxdd_cap",
             "sweep_kind": kind,
             "n_candidates": len(combos),
@@ -598,7 +615,9 @@ def main(argv: list[str] | None = None) -> int:
     ap_run.add_argument("--config", required=True, help="Path to YAML config")
     ap_run.add_argument("--mode", default="", help="Override periods.mode (three_block|yearly)")
     ap_run.add_argument("--dd-cap", type=float, default=20.0, help="MaxDD cap in percent (default 20)")
-    ap_run.add_argument("--initial-capital", type=float, default=1000.0)
+    ap_run.add_argument(
+        "--initial-capital", type=_positive_number, default=1000.0, help="Starting balance per period (default 1000)"
+    )
     ap_run.add_argument(
         "--format",
         default="json",
