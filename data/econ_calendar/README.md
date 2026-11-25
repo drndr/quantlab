@@ -16,10 +16,10 @@ missing from this file, or if the file doesn't cover the backtest period for tha
 
 ## FOMC
 
-Every FOMC policy statement 2020–2026, from the Federal Reserve's meeting calendars
+Every FOMC policy statement 2019–2026, from the Federal Reserve's meeting calendars
 (https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm and `fomchistorical<year>.htm`),
 with the release time from each statement's press release: 14:00 for scheduled meetings; the
-2020 emergency actions at their actual times. New meetings: add a row.
+unscheduled 2019–2020 statements at their actual times. New meetings: add a row.
 
 ## Adding other events
 

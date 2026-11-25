@@ -19,26 +19,22 @@ from .engine.metrics import sharpe, sharpe_bootstrap
 
 # Same run pipeline as the webapp and the regression tests (see quantlab/pipeline.py).
 from .paths import REPORTS
-from .periods import build_periods
+from .periods import build_periods, holdout_names
 from .pipeline import Period, PreparedPeriod, backtest_config, prepare_periods, run_config_periods
 
 
-def _holdout(cfg: dict[str, Any]) -> list[str]:
-    """Holdout period names (`periods.score_exclude`)."""
-    return list(((cfg.get("periods", {}) or {}).get("score_exclude") or []) or [])
-
-
-def _tuning_periods(cfg: dict[str, Any], *, with_holdout: bool) -> list[Period]:
-    """The config's periods, without the holdout unless asked for.
+def _tuning_periods(cfg: dict[str, Any], *, with_holdout: list[str]) -> list[Period]:
+    """The config's periods, without the holdouts except those named in `with_holdout`.
 
     Holdout periods are not even run while tuning, so their results can't steer
-    decisions. --with-holdout is for the final check of a frozen candidate.
+    decisions. --with-holdout is for the final check of a frozen candidate; holdouts
+    are named one by one, so checking one never spends another.
     """
-    periods = build_periods(cfg)
-    if with_holdout:
-        return periods
-    holdout = set(_holdout(cfg))
-    return [p for p in periods if p[0] not in holdout]
+    holdout = holdout_names(cfg)
+    unknown = [name for name in with_holdout if name not in holdout]
+    if unknown:
+        raise ValueError(f"Unknown holdout {unknown} (holdouts in this config: {holdout})")
+    return [p for p in build_periods(cfg) if p[0] not in holdout or p[0] in with_holdout]
 
 
 @dataclass(frozen=True)
@@ -261,7 +257,7 @@ def _run_and_score(
         period_dfs,
         dd_cap_percent=dd_cap_percent,
         initial_capital=bt_config.initial_capital,
-        score_exclude=_holdout(cfg),
+        score_exclude=holdout_names(cfg),
     )
 
 
@@ -302,8 +298,8 @@ def _write_decision_bundle(
 
     holdout_line = ""
     if notes.get("score_exclude"):
-        how = "run, excluded from score" if notes.get("with_holdout") else "not run"
-        holdout_line = f"Holdout ({how}): {notes.get('score_exclude')}\n\n"
+        ran = notes.get("with_holdout") or "none"
+        holdout_line = f"Holdouts (never scored): {notes.get('score_exclude')}; run: {ran}\n\n"
 
     decision_md = (
         f"# Decision: {slug}\n\n"
@@ -352,7 +348,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     prepared = prepare_periods(cfg, _tuning_periods(cfg, with_holdout=args.with_holdout))
 
-    score_exclude = _holdout(cfg)
+    score_exclude = holdout_names(cfg)
     score, results_df = _run_and_score(
         cfg, prepared, initial_capital=args.initial_capital, dd_cap_percent=float(args.dd_cap)
     )
@@ -362,8 +358,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         + "\n\n"
         + f"OK={score.ok}  sum_pnl={score.sum_pnl:.2f}%  worst_maxdd={score.worst_maxdd:.2f}%  avg_sharpe={score.avg_sharpe:.2f}"
     )
-    if score_exclude and not args.with_holdout:
-        text += f"\nHoldout not run: {score_exclude} (--with-holdout for the final check)"
+    not_run = [name for name in score_exclude if name not in args.with_holdout]
+    if not_run:
+        text += f"\nHoldout not run: {not_run} (--with-holdout NAME for the final check)"
 
     payload = {
         "kind": "run",
@@ -380,7 +377,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         },
         "periods": results_df.to_dict(orient="records"),
         "score_exclude": list(score_exclude),
-        "with_holdout": bool(args.with_holdout),
+        "with_holdout": list(args.with_holdout),
     }
 
     _emit(args, payload=payload, text=text)
@@ -393,7 +390,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             "dd_cap_percent": float(args.dd_cap),
             "initial_capital": float(args.initial_capital),
             "score_exclude": list(score_exclude),
-            "with_holdout": bool(args.with_holdout),
+            "with_holdout": list(args.with_holdout),
         }
         d = _write_decision_bundle(
             slug=args.decision_slug,
@@ -562,8 +559,8 @@ def cmd_sweep(args: argparse.Namespace) -> int:
         "initial_capital": initial_capital,
         "top_k": int(top_k),
         "topk": topk_df.to_dict(orient="records"),
-        "score_exclude": _holdout(base_cfg),
-        "with_holdout": bool(args.with_holdout),
+        "score_exclude": holdout_names(base_cfg),
+        "with_holdout": list(args.with_holdout),
     }
 
     _emit(args, payload=payload, text=text)
@@ -581,8 +578,8 @@ def cmd_sweep(args: argparse.Namespace) -> int:
             "sweep_kind": kind,
             "n_candidates": len(combos),
             "grid": {k: grid[k] for k in keys},
-            "score_exclude": _holdout(best_cfg),
-            "with_holdout": bool(args.with_holdout),
+            "score_exclude": holdout_names(best_cfg),
+            "with_holdout": list(args.with_holdout),
         }
         d = _write_decision_bundle(
             slug=args.decision_slug,
@@ -602,7 +599,7 @@ def cmd_sweep(args: argparse.Namespace) -> int:
 
 
 WITH_HOLDOUT_HELP = (
-    "Also run the holdout periods (periods.score_exclude; still not scored). "
+    "Also run these holdout periods, by name (e.g. 2026; still not scored). "
     "Only for the final check of a frozen candidate."
 )
 
@@ -625,7 +622,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Output format (default: json)",
     )
     ap_run.add_argument("--decision-slug", default="", help="If set, write decision bundle under reports/trend_based/decisions")
-    ap_run.add_argument("--with-holdout", action="store_true", help=WITH_HOLDOUT_HELP)
+    ap_run.add_argument("--with-holdout", nargs="+", default=[], metavar="NAME", help=WITH_HOLDOUT_HELP)
     ap_run.set_defaults(func=cmd_run)
 
     ap_sw = sub.add_parser("sweep", help="Run a grid sweep from sweeps.yaml")
@@ -639,7 +636,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap_sw.add_argument("--decision-slug", default="", help="If set, write decision bundle")
     ap_sw.add_argument("--progress", default="", help="Print progress every N combos")
-    ap_sw.add_argument("--with-holdout", action="store_true", help=WITH_HOLDOUT_HELP)
+    ap_sw.add_argument("--with-holdout", nargs="+", default=[], metavar="NAME", help=WITH_HOLDOUT_HELP)
     ap_sw.set_defaults(func=cmd_sweep)
 
     args = ap.parse_args(argv)

@@ -76,8 +76,8 @@ quantlab-ui --port 8080
 # Single scoring run
 quantlab-rnd run --config src/quantlab/configs/trend_based/current.yaml
 
-# Holdout periods (periods.score_exclude, i.e. 2026) are not run while tuning.
-# Add --with-holdout only for the final check of a frozen candidate.
+# Holdouts (2019: periods.holdout, 2026: periods.score_exclude) are not run while tuning; the WebUI shows them.
+# Add --with-holdout NAME (e.g. --with-holdout 2026) only for the final check of a frozen candidate.
 
 # (Optional) Sweeps
 # Sweeps are driven by `quantlab-rnd sweep` and dotted-path keys (see `--help`).

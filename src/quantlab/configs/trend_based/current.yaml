@@ -10,6 +10,11 @@ periods:
   warmup_days: 21
   score_exclude:
   - '2026'
+  # Second holdout (never scored, like score_exclude; may not overlap other periods).
+  holdout:
+  - name: '2019'
+    start: '2019-01-01'
+    end: '2019-12-31'
   three_block:
     p1:
       name: 2020-2022

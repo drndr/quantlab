@@ -82,10 +82,10 @@ def test_new_york_to_utc_handles_daylight_saving() -> None:
     assert new_york_to_utc("2024-12-18", "14:00") == pd.Timestamp("2024-12-18 19:00", tz="UTC")  # EST
 
 
-def test_real_calendar_has_every_fomc_statement_2020_to_2026() -> None:
+def test_real_calendar_has_every_fomc_statement_2019_to_2026() -> None:
     df = pd.read_csv(EVENT_CALENDAR, dtype=str)
     fomc = df[df["event"] == "FOMC"]
     per_year = fomc["date"].str[:4].value_counts().sort_index().to_dict()
-    assert per_year == {"2020": 10, "2021": 8, "2022": 8, "2023": 8, "2024": 8, "2025": 8, "2026": 8}
+    assert per_year == {"2019": 9, "2020": 10, "2021": 8, "2022": 8, "2023": 8, "2024": 8, "2025": 8, "2026": 8}
     # Missing from the old calendar: three 2023-24 meetings and the 2020 emergency actions.
     assert {"2023-02-01", "2023-11-01", "2024-05-01", "2020-03-03", "2020-03-15", "2020-03-23"} <= set(fomc["date"])

@@ -24,7 +24,7 @@ from .report_common import PeriodRow, safe_float, fmt_ts
 
 def _fig_to_data_uri(fig) -> str:
     bio = io.BytesIO()
-    # Slightly lower DPI keeps files smaller and helps 3-up layout.
+    # Slightly lower DPI keeps files smaller.
     # Avoid bbox_inches='tight' here: it can introduce inconsistent padding/cropping
     # across periods (and makes charts feel "flattened").
     fig.savefig(bio, format="png", dpi=130)
@@ -248,21 +248,14 @@ def report_periods_equity_only(
     if exclude:
         holdout_note = f"Holdout excluded from header stats: {sorted(exclude)}"
 
-    # Charts HTML with show-all toggle
-    charts_html = [
-        "<div class='charts-head'>"
-        "<button id='toggle-charts' class='btn-small' type='button'>Show all charts</button>"
-        "</div>",
-        "<div class='charts' id='charts'>",
-    ]
+    charts_html = ["<div class='charts' id='charts'>"]
 
-    for i, (name, uri) in enumerate(charts):
-        hidden_class = " hidden" if i >= 3 else ""
+    for name, uri in charts:
         if uri is None:
             charts_html.append(
                 "".join(
                     [
-                        "<div class='chart{hc}'>".format(hc=hidden_class),
+                        "<div class='chart'>",
                         f"<div class='chart-title'>Equity — {name}</div>",
                         "<div class='chart-missing'>No data for this period</div>",
                         "</div>",
@@ -273,7 +266,7 @@ def report_periods_equity_only(
             charts_html.append(
                 "".join(
                     [
-                        "<div class='chart{hc}'>".format(hc=hidden_class),
+                        "<div class='chart'>",
                         f"<div class='chart-title'>Equity — {name}</div>",
                         f"<img alt='Equity {name}' src='{uri}' />",
                         "</div>",
@@ -347,12 +340,6 @@ def report_periods_equity_only(
     .pill {{ background: var(--card2); border:1px solid var(--border); border-radius: 999px; padding: 8px 10px; font-size: 12px; color: var(--muted); }}
     .pill b {{ color: var(--fg); font-weight: 700; font-variant-numeric: tabular-nums; }}
 
-    .charts-head {{ display:flex; justify-content: space-between; align-items: center; gap: 12px; margin: 10px 0; }}
-    .btn-small {{ font-size: 12px; padding: 6px 10px; border-radius: 10px; border:1px solid var(--border); background: var(--card2); color: var(--fg); cursor:pointer; }}
-    .btn-small:hover {{ filter: brightness(1.08); }}
-
-    .hidden {{ display:none; }}
-
     /* lightbox removed */
 
     .card {{
@@ -400,16 +387,16 @@ def report_periods_equity_only(
     .mono {{ font-family: var(--mono); font-variant-numeric: tabular-nums; }}
     td.period {{ font-weight: 600; }}
 
-    /* Charts row: force 3 charts horizontally; allow horizontal scroll on small screens */
-    .charts {{ display: flex; gap: 14px; flex-wrap: nowrap; align-items: stretch; overflow-x: auto; padding-bottom: 6px; }}
+    /* Charts: two per row (tuning periods, then holdouts); one per row on small screens */
+    .charts {{ display: grid; grid-template-columns: 1fr; gap: 14px; }}
+    @media (min-width: 700px) {{ .charts {{ grid-template-columns: 1fr 1fr; }} }}
     .chart {{
-      flex: 0 0 calc(33.333% - 10px);
       border: 1px solid var(--border);
       border-radius: 18px;
       background: var(--card);
       box-shadow: var(--shadow);
       padding: 12px;
-      min-width: 340px;
+      min-width: 0;
     }}
     .chart-title {{ font-size: 12px; color: var(--muted); margin: 0 0 8px 2px; }}
     .chart img {{
@@ -422,7 +409,7 @@ def report_periods_equity_only(
       display: block;
     }}
     .chart-missing {{
-      height: 520px;
+      aspect-ratio: 4.9 / 3.6;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -519,28 +506,6 @@ def report_periods_equity_only(
 
             rows.forEach(r => tbody.appendChild(r));
           }});
-        }});
-      }})();
-
-      // Charts show-all toggle
-      (function() {{
-        const btn = document.getElementById('toggle-charts');
-        const charts = document.getElementById('charts');
-        if (!btn || !charts) return;
-        btn.addEventListener('click', () => {{
-          const hidden = charts.querySelectorAll('.chart.hidden');
-          const anyHidden = hidden.length > 0;
-          hidden.forEach(el => el.classList.remove('hidden'));
-          if (anyHidden) {{
-            btn.textContent = 'Hide extra charts';
-            btn.dataset.state = 'shown';
-          }} else {{
-            // hide all after first 3
-            const all = charts.querySelectorAll('.chart');
-            all.forEach((el, i) => {{ if (i >= 3) el.classList.add('hidden'); }});
-            btn.textContent = 'Show all charts';
-            btn.dataset.state = 'hidden';
-          }}
         }});
       }})();
 

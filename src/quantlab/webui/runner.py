@@ -11,7 +11,7 @@ import yaml
 
 from .config import CONFIG_PATH, StrategyInfo, get_strategies
 from ..configs.schema import validate_config_dict
-from ..periods import build_periods
+from ..periods import build_periods, holdout_names
 from ..pipeline import load_period_data, run_config_periods
 from ..strategies import (
     BuyAndHoldStrategy,
@@ -115,7 +115,7 @@ def run_backtest(
                     # Trade breakdown report should keep a clean title (avoid dumping the
                     # hyperparam-enriched string into the page title/header).
                     base_title = (final_title.split(" + ", 1)[0].strip() if final_title else info.name)
-                    score_exclude = list(((cfg.get("periods", {}) or {}).get("score_exclude") or []) or [])
+                    score_exclude = holdout_names(cfg)
                     report_periods_trades_html(
                         periods=periods_df,
                         out_path=trades_path,
@@ -233,7 +233,7 @@ def _generate_report(
     title = info.name
 
     # (removed) legacy title enrichment: configs are pipeline-based; keep titles stable.
-    score_exclude = list(((cfg.get("periods", {}) or {}).get("score_exclude") or []) or []) if isinstance(cfg, dict) else []
+    score_exclude = holdout_names(cfg)
 
     baseline_periods = baseline_results or None
 

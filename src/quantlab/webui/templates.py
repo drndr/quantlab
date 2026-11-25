@@ -1,5 +1,6 @@
 """HTML templates for the web UI."""
 
+from ..periods import holdout_names
 from .config import get_strategies
 from .runner import report_exists, report_mtime
 
@@ -30,8 +31,7 @@ def render_index() -> str:
     # Holdout note (e.g. 2026 excluded from rnd scoring)
     score_exclude = []
     try:
-        periods = (cfg.get("periods", {}) or {}) if isinstance(cfg, dict) else {}
-        score_exclude = list(periods.get("score_exclude") or [])
+        score_exclude = holdout_names(cfg)
     except Exception:
         score_exclude = []
 
@@ -285,7 +285,7 @@ HTML_TEMPLATE = """<!doctype html>
 
           <label for="variant">Report</label>
           <select name="variant" id="variant">
-            <option value="">Performance (3 blocks + holdout)</option>
+            <option value="">Performance (tuning blocks + holdouts)</option>
             <option value="robustness">Robustness (yearly breakdown)</option>
           </select>
 

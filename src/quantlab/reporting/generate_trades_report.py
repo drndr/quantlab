@@ -147,6 +147,9 @@ def report_periods_trades_html(
 
     # TOTAL breakdowns
     by_period = _agg(all_trades, "period")
+    # Same period order as the rest of the report.
+    by_period["period"] = pd.Categorical(by_period["period"], categories=list(periods), ordered=True)
+    by_period = by_period.sort_values("period").reset_index(drop=True)
     by_month = _agg(all_trades, "entry_month_of_year")
     # Force calendar order (Jan..Dec) instead of sorting by sum_pnl.
     month_order = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
